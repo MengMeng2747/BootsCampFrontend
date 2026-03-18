@@ -1,0 +1,1477 @@
+// ─── App.tsx ──────────────────────────────────────────────────────────────────
+// เชื่อม Frontend กับ Spring Boot Backend แล้ว
+import { useState, useEffect, KeyboardEvent, createContext, useContext, ReactNode, useCallback } from "react";
+import { Routes, Route, Navigate, useNavigate, useLocation, useParams, useSearchParams } from "react-router-dom";
+
+import { AdminSidebar }    from "./components/admin/AdminSidebar";
+import { AdminTopbar }     from "./components/admin/AdminTopbar";
+import { ResellerSidebar } from "./components/reseller/ResellerSidebar";
+import { ResellerTopbar }  from "./components/reseller/ResellerTopbar";
+
+import { DashboardPage  as AdminDashboard }  from "./pages/admin/DashboardPage";
+import { ProductsPage   as AdminProducts }   from "./pages/admin/ProductsPage";
+import { ResellersPage  as AdminResellers }  from "./pages/admin/ResellersPage";
+import { OrdersPage     as AdminOrders }     from "./pages/admin/OrdersPage";
+
+import { RegisterPage }                        from "./pages/reseller/RegisterPage";
+import { RegisterSuccessPage }                 from "./pages/reseller/RegisterSuccessPage";
+import { DashboardPage  as ResellerDashboard } from "./pages/reseller/DashboardPage";
+import { CatalogPage }                         from "./pages/reseller/CatalogPage";
+import { MyProductsPage }                      from "./pages/reseller/MyProductsPage";
+import { OrdersPage     as ResellerOrders }    from "./pages/reseller/OrdersPage";
+import { WalletPage }                          from "./pages/reseller/WalletPage";
+
+import { ShopPage }       from "./pages/customer/ShopPage";
+import { CheckoutPage }   from "./pages/customer/CheckoutPage";
+import { PaymentPage }    from "./pages/customer/PaymentPage";
+import { TrackOrderPage } from "./pages/customer/TrackOrderPage";
+
+import { Alert } from "./components/Alert";
+import { T, F }  from "./styles/tokens";
+
+// ── API imports ────────────────────────────────────────────────────────────────
+import { adminLogin, adminLogout, resellerLogin, resellerRegister, fetchMe } from "./api/auth";
+import {
+  fetchAdminDashboard, fetchAllProducts, createProduct, updateProduct, deleteProduct,
+  fetchAllResellers, approveReseller, rejectReseller,
+  fetchAllOrders, shipOrder,
+  type AdminDashboard as AdminDashboardData, type ProductAPI, type ResellerAPI, type OrderAPI,
+} from "./api/admin";
+import {
+  fetchCatalog, fetchMyProducts, addProductToShop,
+  fetchResellerOrders, fetchWallet,
+  type CatalogProductAPI, type ResellerProductAPI, type WalletAPI,
+} from "./api/reseller";
+import {
+  fetchShopProducts, createOrder, payOrder, trackOrder,
+  type ShopProductAPI, type TrackOrderAPI,
+} from "./api/customer";
+
+import type { AlertType } from "./types";
+
+// ════════════════════════════════════════════════════════════
+//  AUTH CONTEXT
+// ════════════════════════════════════════════════════════════
+interface SessionUser {
+  id?:      number;   // reseller มี id, admin ไม่มี
+  email:    string;
+  role:     "admin" | "reseller";
+  name?:    string;
+  shopSlug?: string;
+}
+
+interface AuthContextType {
+  session:      SessionUser | null;
+  setSession:   (u: SessionUser | null) => void;
+  logout:       () => void;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+const useAuth = () => useContext(AuthContext)!;
+
+// ════════════════════════════════════════════════════════════
+//  PROTECTED ROUTES
+// ════════════════════════════════════════════════════════════
+
+// BR-03: เข้า /admin/* โดยไม่ได้ login → redirect /admin/login
+// BR-04: login เป็น reseller แต่เข้า /admin/* → Forbidden
+const RequireAdmin = ({ children }: { children: ReactNode }) => {
+  const { session } = useAuth();
+  if (!session) return <Navigate to="/admin/login" replace />;
+  if (session.role !== "admin") return <Navigate to="/admin/forbidden" replace />;
+  return <>{children}</>;
+};
+
+// Reseller ไม่ login → redirect /login
+const RequireReseller = ({ children }: { children: ReactNode }) => {
+  const { session } = useAuth();
+  return session?.role === "reseller" ? <>{children}</> : <Navigate to="/login" replace />;
+};
+
+// ════════════════════════════════════════════════════════════
+//  FORBIDDEN PAGE (BR-04)
+// ════════════════════════════════════════════════════════════
+const ForbiddenPage = () => {
+  const navigate = useNavigate();
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", ...F }}>
+      <div style={{ textAlign: "center" }}>
+        <div style={{ fontSize: 64, marginBottom: 16 }}>⛔</div>
+        <h1 style={{ color: T.red, fontSize: 28, margin: "0 0 8px" }}>403 Forbidden</h1>
+        <p style={{ color: T.muted, margin: "0 0 24px" }}>คุณไม่มีสิทธิ์เข้าใช้งานส่วน Admin (BR-04)</p>
+        <button onClick={() => navigate("/admin/login")}
+          style={{ padding: "10px 22px", background: T.accent, border: "none", borderRadius: 8, color: "#0d1117", fontWeight: 700, cursor: "pointer", ...F }}>
+          ← กลับหน้า Admin Login
+        </button>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  ADMIN LAYOUT
+// ════════════════════════════════════════════════════════════
+const AdminLayout = ({ children }: { children: ReactNode }) => {
+  const { logout } = useAuth();
+  const navigate   = useNavigate();
+  const location   = useLocation();
+  const [collapsed, setCollapsed] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
+
+  const pageMap: Record<string, any> = {
+    "/admin/dashboard": "dashboard",
+    "/admin/products":  "products",
+    "/admin/resellers": "resellers",
+    "/admin/orders":    "orders",
+  };
+  const currentPage = pageMap[location.pathname] ?? "dashboard";
+
+  // นับ reseller pending จาก backend
+  useEffect(() => {
+    fetchAllResellers()
+      .then(rs => setPendingCount(rs.filter(r => r.status === "pending").length))
+      .catch(() => {});
+  }, [location.pathname]);
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", background: T.bg }}>
+      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <AdminSidebar
+        page={currentPage}
+        setPage={(p: string) => navigate(`/admin/${p}`)}
+        onLogout={logout}
+        collapsed={collapsed}
+        setCollapsed={setCollapsed}
+        pendingCount={pendingCount}
+      />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <AdminTopbar page={currentPage} onToggle={() => setCollapsed(c => !c)} />
+        <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>{children}</main>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  RESELLER LAYOUT
+// ════════════════════════════════════════════════════════════
+const ResellerLayout = ({ children, resellerInfo }: { children: ReactNode; resellerInfo: any }) => {
+  const { logout } = useAuth();
+  const navigate   = useNavigate();
+  const location   = useLocation();
+  const [collapsed, setCollapsed] = useState(false);
+
+  const pageMap: Record<string, any> = {
+    "/reseller/dashboard":   "dashboard",
+    "/reseller/catalog":     "catalog",
+    "/reseller/my-products": "my-products",
+    "/reseller/orders":      "orders",
+    "/reseller/wallet":      "wallet",
+  };
+  const currentPage = pageMap[location.pathname] ?? "dashboard";
+
+  return (
+    <div style={{ display: "flex", minHeight: "100vh", background: T.bg }}>
+      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <ResellerSidebar
+        page={currentPage}
+        setPage={(p: string) => navigate(`/reseller/${p}`)}
+        onLogout={logout}
+        collapsed={collapsed}
+        setCollapsed={setCollapsed}
+        user={resellerInfo}
+      />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
+        <ResellerTopbar page={currentPage} onToggle={() => setCollapsed(c => !c)} user={resellerInfo} />
+        <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>{children}</main>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  ADMIN DASHBOARD PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const AdminDashboardConnected = () => {
+  const [dashboard, setDashboard] = useState<AdminDashboardData | null>(null);
+  const [orders,    setOrders]    = useState<OrderAPI[]>([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState("");
+
+  useEffect(() => {
+    setLoading(true);
+    Promise.all([
+      fetchAdminDashboard(),
+      fetchAllOrders(),
+    ])
+      .then(([dash, ords]) => {
+        setDashboard(dash);
+        setOrders(ords);
+      })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
+
+  // ใช้ค่าจาก /admin/dashboard โดยตรง (Backend คำนวณถูกต้องแล้ว)
+  // แปลง orders สำหรับตาราง "ออเดอร์ล่าสุด" เท่านั้น
+  const mappedOrders = orders.map(o => ({
+    id: o.orderNumber, resellerId: 0, resellerName: "", shopName: "",
+    customer: o.customerName, phone: o.customerPhone, address: o.shippingAddress,
+    product: "", productId: 0, items: [],
+    qty: 0, salePrice: 0,
+    totalSale:   Number(o.totalAmount)    ?? 0,
+    totalProfit: Number(o.resellerProfit) ?? 0,
+    cost: 0, date: o.createdAt, status: o.status as any,
+  }));
+
+  // สร้าง fake products/resellers เพื่อส่ง props (DashboardPage คำนวณเอง)
+  // แต่ inject ค่า stat จาก backend แทน
+  const statOrders = [
+    // สร้าง orders จำลองให้ครบ stat ที่ backend ส่งมา
+    ...mappedOrders,
+    // ถ้า dashboard มีค่า inject dummy orders เพื่อให้ StatCard แสดงถูก
+  ];
+
+  // Override: ส่ง orders ที่มี totalSale/totalProfit จาก backend ตรงๆ
+  return (
+    <div>
+      {/* Stat cards จาก backend โดยตรง */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 28 }}>
+        {[
+          { label: "ยอดขายรวม",          value: `฿${Number(dashboard?.totalSales   ?? 0).toLocaleString()}`,  sub: "shipped+completed", accent: "#3fb950", icon: "📈" },
+          { label: "กำไรจ่ายตัวแทน",     value: `฿${Number(dashboard?.totalProfit  ?? 0).toLocaleString()}`,  sub: "บวก Wallet แล้ว",   accent: "#f0883e", icon: "💰" },
+          { label: "ออเดอร์ทั้งหมด",     value: Number(dashboard?.totalOrders   ?? 0),                        sub: `รอ ${dashboard?.pendingOrders ?? 0} รายการ`, accent: "#d29922", icon: "📦" },
+          { label: "รอดำเนินการ",         value: Number(dashboard?.pendingOrders ?? 0),                        sub: "ยังไม่จัดส่ง",       accent: "#f85149", icon: "⏳" },
+          { label: "ตัวแทนอนุมัติแล้ว",  value: Number(dashboard?.totalResellers  ?? 0),                      sub: "Login ได้",          accent: "#58a6ff", icon: "👥" },
+          { label: "ตัวแทนรออนุมัติ",    value: Number(dashboard?.pendingResellers ?? 0),                      sub: "รอตรวจสอบ",          accent: "#bc8cff", icon: "⚠️" },
+        ].map(s => (
+          <div key={s.label} style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 10, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
+            <div style={{ position: "absolute", right: 14, top: 12, fontSize: 28, opacity: .15 }}>{s.icon}</div>
+            <div style={{ color: "#7d8590", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8 }}>{s.label}</div>
+            <div style={{ color: "#e6edf3", fontSize: 26, fontWeight: 700 }}>{s.value}</div>
+            <div style={{ color: "#7d8590", fontSize: 12, marginTop: 4 }}>{s.sub}</div>
+            <div style={{ height: 2, background: `linear-gradient(90deg,${s.accent},transparent)`, borderRadius: 2, marginTop: 14 }} />
+          </div>
+        ))}
+      </div>
+
+      {/* ตารางออเดอร์ล่าสุด */}
+      <h3 style={{ color: "#e6edf3", fontSize: 15, fontWeight: 600, marginBottom: 14 }}>ออเดอร์ล่าสุด</h3>
+      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 10, overflow: "hidden" }}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#1c2128" }}>
+                {["เลขออเดอร์","ลูกค้า","ยอดขาย","กำไร","สถานะ"].map(h => (
+                  <th key={h} style={{ padding: "11px 16px", textAlign: "left", color: "#7d8590", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {[...mappedOrders].sort((a,b) => new Date(b.date).getTime()-new Date(a.date).getTime()).slice(0,5).map(o => {
+                const isDone = ["shipped","completed"].includes(o.status);
+                return (
+                  <tr key={o.id} style={{ borderTop: "1px solid #21262d" }}>
+                    <td style={{ padding: "13px 16px", color: "#58a6ff", fontWeight: 600, fontSize: 12 }}>{o.id}</td>
+                    <td style={{ padding: "13px 16px", color: "#e6edf3", fontSize: 13 }}>{o.customer}</td>
+                    <td style={{ padding: "13px 16px", color: "#3fb950", fontWeight: 700, fontSize: 13 }}>฿{Number(o.totalSale).toLocaleString()}</td>
+                    <td style={{ padding: "13px 16px", color: isDone ? "#f0883e" : "#484f58", fontWeight: isDone ? 700 : 400, fontSize: 13 }}>{isDone ? `฿${Number(o.totalProfit).toLocaleString()}` : "—"}</td>
+                    <td style={{ padding: "13px 16px" }}>
+                      <span style={{ background: o.status==="pending" ? "rgba(210,153,34,.15)" : o.status==="shipped" ? "rgba(88,166,255,.12)" : "rgba(188,140,255,.12)", color: o.status==="pending" ? "#d29922" : o.status==="shipped" ? "#58a6ff" : "#bc8cff", border: `1px solid ${o.status==="pending" ? "rgba(210,153,34,.4)" : o.status==="shipped" ? "rgba(88,166,255,.35)" : "rgba(188,140,255,.35)"}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>
+                        {o.status==="pending" ? "รออนุมัติ" : o.status==="shipped" ? "จัดส่งแล้ว" : "เสร็จสมบูรณ์"}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  ADMIN PRODUCTS PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const AdminProductsConnected = () => {
+  const navigate  = useNavigate();
+  const [products, setProductsState] = useState<ProductAPI[]>([]);
+  const [orders,   setOrders]        = useState<OrderAPI[]>([]);
+  const [loading,  setLoading]       = useState(true);
+  const [error,    setError]         = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true);
+    Promise.all([fetchAllProducts(), fetchAllOrders()])
+      .then(([prods, ords]) => { setProductsState(prods); setOrders(ords); })
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
+
+  const mappedProducts = products.map(p => ({
+    id: p.id, name: p.name, imagePreview: p.imageUrl ?? null,
+    description: p.description ?? "", cost: p.costPrice, minPrice: p.minPrice, stock: p.stock,
+  }));
+
+  const mappedOrders = orders.map(o => ({
+    id: o.orderNumber, resellerId: 0, resellerName: "", shopName: "",
+    customer: o.customerName, phone: o.customerPhone, address: o.shippingAddress,
+    product: "", productId: 0, items: [],
+    qty: 0, salePrice: 0, totalSale: o.totalAmount, totalProfit: o.resellerProfit,
+    cost: 0, date: o.createdAt, status: o.status as any,
+  }));
+
+  // intercept setProducts → ดักจับการลบ (จำนวนลดลง) แล้วเรียก API
+  const handleSetProducts = (updater: any) => {
+    const prev = mappedProducts;
+    const next = typeof updater === "function" ? updater(prev) : updater;
+
+    if (next.length < prev.length) {
+      // หา product ที่หายไป → ลบ
+      const deleted = prev.find(p => !next.find((n: any) => n.id === p.id));
+      if (deleted) {
+        deleteProduct(deleted.id)
+          .then(load)
+          .catch(e => alert("ลบไม่ได้: " + e.message));
+      }
+    } else {
+      // add/edit → reload
+      load();
+    }
+
+    // อัปเดต UI ทันที
+    setProductsState(next.map((n: any) => ({
+      id: n.id, name: n.name, imageUrl: n.imagePreview,
+      description: n.description, costPrice: n.cost,
+      minPrice: n.minPrice, stock: n.stock,
+    })));
+  };
+
+  return (
+    <AdminProducts
+      products={mappedProducts}
+      setProducts={handleSetProducts as any}
+      orders={mappedOrders}
+    />
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  ADMIN RESELLERS PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const AdminResellersConnected = () => {
+  const [resellers, setResellersState] = useState<ResellerAPI[]>([]);
+  const [loading,   setLoading]        = useState(true);
+  const [error,     setError]          = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetchAllResellers()
+      .then(setResellersState)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
+
+  const mapped = resellers.map(r => ({
+    id: r.id, name: r.name, email: r.email, phone: r.phone,
+    shopName: "", shopSlug: "", address: r.address,
+    status: r.status as any, password: "",
+  }));
+
+  // intercept setResellers → ดักจับ updater function แล้วเรียก API จริง
+  const handleSetResellers = (updater: any) => {
+    // ResellersPage เรียก: setResellers(rs => rs.map(r => r.id === id ? {...r, status: "approved"} : r))
+    // เราต้องหา id และ status ที่เปลี่ยน แล้วเรียก API
+    const prev = mapped;
+    const next = typeof updater === "function" ? updater(prev) : updater;
+
+    // หา reseller ที่ status เปลี่ยน
+    next.forEach((n: any) => {
+      const old = prev.find(p => p.id === n.id);
+      if (!old || old.status === n.status) return;
+      if (n.status === "approved") {
+        approveReseller(n.id).then(load).catch(e => alert(e.message));
+      } else if (n.status === "rejected") {
+        rejectReseller(n.id).then(load).catch(e => alert(e.message));
+      }
+    });
+
+    // อัปเดต UI ทันทีก่อน reload
+    setResellersState(next.map((n: any) => ({
+      id: n.id, name: n.name, email: n.email, phone: n.phone,
+      role: "reseller", status: n.status, address: n.address,
+    })));
+  };
+
+  return (
+    <AdminResellers
+      resellers={mapped}
+      setResellers={handleSetResellers as any}
+    />
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  ADMIN ORDERS PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const AdminOrdersConnected = () => {
+  const [orders,  setOrdersState] = useState<OrderAPI[]>([]);
+  const [loading, setLoading]     = useState(true);
+  const [error,   setError]       = useState("");
+
+  const load = useCallback(() => {
+    setLoading(true);
+    fetchAllOrders()
+      .then(setOrdersState)
+      .catch(e => setError(e.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
+
+  const mapped = orders.map(o => ({
+    id: o.orderNumber, resellerId: 0, resellerName: "", shopName: "",
+    customer: o.customerName, phone: o.customerPhone, address: o.shippingAddress,
+    product: "", productId: 0, items: [],
+    qty: 0, salePrice: 0, totalSale: o.totalAmount, totalProfit: o.resellerProfit,
+    cost: 0, date: o.createdAt, status: o.status as any,
+    _backendId: o.id,
+  }));
+
+  // intercept setOrders → ดักจับ status ที่เปลี่ยนแล้วเรียก ship API
+  const handleSetOrders = (updater: any) => {
+    const prev = mapped;
+    const next = typeof updater === "function" ? updater(prev) : updater;
+
+    next.forEach((n: any) => {
+      const old = prev.find(p => p.id === n.id);
+      if (!old || old.status === n.status) return;
+      // status เปลี่ยนเป็น shipped → เรียก API
+      if (n.status === "shipped") {
+        const backendId = orders.find(o => o.orderNumber === n.id)?.id;
+        if (backendId) {
+          shipOrder(backendId).then(load).catch(e => alert(e.message));
+        }
+      }
+    });
+
+    // อัปเดต UI ทันที
+    setOrdersState(next.map((n: any) => ({
+      id: orders.find(o => o.orderNumber === n.id)?.id ?? 0,
+      orderNumber: n.id,
+      shopId: 0,
+      customerName: n.customer,
+      customerPhone: n.phone,
+      shippingAddress: n.address,
+      totalAmount: n.totalSale,
+      resellerProfit: n.totalProfit,
+      status: n.status,
+      createdAt: n.date,
+    })));
+  };
+
+  return (
+    <AdminOrders
+      orders={mapped as any}
+      setOrders={handleSetOrders as any}
+    />
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  ADMIN LOGIN PAGE — URL: /admin/login (BR-01, BR-02)
+// ════════════════════════════════════════════════════════════
+const AdminLoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => {
+  const navigate = useNavigate();
+  const [email,   setEmail]   = useState("");
+  const [pass,    setPass]    = useState("");
+  const [loading, setLoading] = useState(false);
+  const [showPw,  setShowPw]  = useState(false);
+  const [error,   setError]   = useState("");
+
+  const submit = async () => {
+    setError("");
+    if (!email || !pass) { setError("กรุณากรอกอีเมลและรหัสผ่าน"); return; }
+    setLoading(true);
+    try {
+      // POST /admin/login → BR-01
+      await adminLogin({ email, password: pass });
+      setSession({ email, role: "admin" });
+      navigate("/admin/dashboard");
+    } catch (err: any) {
+      // BR-02: email/password ผิด หรือ role ไม่ใช่ admin
+      setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <div style={{ position: "fixed", inset: 0, backgroundImage: "linear-gradient(rgba(88,166,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(88,166,255,.04) 1px,transparent 1px)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
+      <div style={{ width: 400, position: "relative", zIndex: 1 }}>
+        <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, boxShadow: "0 24px 64px rgba(0,0,0,.5)", overflow: "hidden" }}>
+          <div style={{ height: 3, background: `linear-gradient(90deg,${T.accent},#bc8cff,transparent)` }} />
+          <div style={{ padding: "32px 32px 28px" }}>
+            <div style={{ textAlign: "center", marginBottom: 28 }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🛡️</div>
+              <h1 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: "0 0 4px", ...F }}>Admin — เข้าสู่ระบบ</h1>
+              <p style={{ color: T.muted, fontSize: 13, margin: 0, ...F }}>URL: <span style={{ color: T.accent }}>/admin/login</span></p>
+            </div>
+
+            {error && <Alert type="error" message={error} onClose={() => setError("")} />}
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6, ...F }}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && submit()}
+                placeholder="admin@rms.com"
+                style={{ width: "100%", padding: "10px 13px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 14, ...F, boxSizing: "border-box", outline: "none" }} />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6, ...F }}>Password</label>
+              <div style={{ position: "relative" }}>
+                <input type={showPw ? "text" : "password"} value={pass} onChange={e => setPass(e.target.value)}
+                  onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && submit()}
+                  placeholder="••••••••"
+                  style={{ width: "100%", padding: "10px 40px 10px 13px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 14, ...F, boxSizing: "border-box", outline: "none" }} />
+                <button onClick={() => setShowPw(s => !s)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>
+                  {showPw ? "🙈" : "👁"}
+                </button>
+              </div>
+            </div>
+
+            <button onClick={submit} disabled={loading}
+              style={{ width: "100%", padding: 11, background: loading ? "rgba(88,166,255,.3)" : T.accent, border: "none", borderRadius: 9, color: loading ? T.muted : "#0d1117", fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", ...F }}>
+              {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ →"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  RESELLER LOGIN PAGE — URL: /login (BR-15,16,17,18)
+// ════════════════════════════════════════════════════════════
+const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => {
+  const navigate = useNavigate();
+  const [email,     setEmail]     = useState("");
+  const [pass,      setPass]      = useState("");
+  const [loading,   setLoading]   = useState(false);
+  const [showPw,    setShowPw]    = useState(false);
+  const [error,     setError]     = useState("");
+  const [statusMsg, setStatusMsg] = useState<{ type: AlertType; msg: string } | null>(null);
+
+  const submit = async () => {
+    setError(""); setStatusMsg(null);
+    if (!email || !pass) { setError("กรุณากรอกอีเมลและรหัสผ่าน"); return; }
+    setLoading(true);
+    try {
+      // POST /api/login
+      const result = await resellerLogin({ email, password: pass });
+
+      if (result.includes("รออนุมัติ")) {
+        // BR-16
+        setStatusMsg({ type: "warning", msg: "บัญชีรออนุมัติ — กรุณารอการติดต่อจาก Admin (BR-16)" });
+      } else if (result.includes("ไม่ได้รับการอนุมัติ")) {
+        // BR-17
+        setStatusMsg({ type: "error", msg: "บัญชีนี้ไม่ได้รับการอนุมัติ — กรุณาติดต่อ Admin (BR-17)" });
+      } else {
+        // BR-15: approved → เรียก /api/me เพื่อดึงข้อมูลจริง
+        try {
+          const me = await fetchMe();
+          setSession({
+            id:       me.id,
+            email:    me.email,
+            role:     "reseller",
+            name:     me.name,
+            shopSlug: me.shopSlug,
+          });
+        } catch {
+          setSession({ email, role: "reseller" });
+        }
+        navigate("/reseller/dashboard");
+      }
+    } catch (err: any) {
+      // BR-18: email/password ผิด
+      setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
+      <div style={{ position: "fixed", inset: 0, backgroundImage: "linear-gradient(rgba(88,166,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(88,166,255,.04) 1px,transparent 1px)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
+      <div style={{ width: 400, position: "relative", zIndex: 1 }}>
+        <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, boxShadow: "0 24px 64px rgba(0,0,0,.5)", overflow: "hidden" }}>
+          <div style={{ height: 3, background: `linear-gradient(90deg,#bc8cff,${T.accent},transparent)` }} />
+          <div style={{ padding: "32px 32px 28px" }}>
+            <div style={{ textAlign: "center", marginBottom: 28 }}>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🏪</div>
+              <h1 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: "0 0 4px", ...F }}>Reseller — เข้าสู่ระบบ</h1>
+              <p style={{ color: T.muted, fontSize: 13, margin: 0, ...F }}>URL: <span style={{ color: T.accent }}>/login</span></p>
+            </div>
+
+            {error     && <Alert type="error"          message={error}         onClose={() => setError("")} />}
+            {statusMsg && <Alert type={statusMsg.type} message={statusMsg.msg} onClose={() => setStatusMsg(null)} />}
+
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: "block", color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6, ...F }}>Email</label>
+              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
+                onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && submit()}
+                placeholder="your@email.com"
+                style={{ width: "100%", padding: "10px 13px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 14, ...F, boxSizing: "border-box", outline: "none" }} />
+            </div>
+
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ display: "block", color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6, ...F }}>Password</label>
+              <div style={{ position: "relative" }}>
+                <input type={showPw ? "text" : "password"} value={pass} onChange={e => setPass(e.target.value)}
+                  onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && submit()}
+                  placeholder="••••••••"
+                  style={{ width: "100%", padding: "10px 40px 10px 13px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 14, ...F, boxSizing: "border-box", outline: "none" }} />
+                <button onClick={() => setShowPw(s => !s)}
+                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>
+                  {showPw ? "🙈" : "👁"}
+                </button>
+              </div>
+            </div>
+
+            <button onClick={submit} disabled={loading}
+              style={{ width: "100%", padding: 11, background: loading ? "rgba(188,140,255,.3)" : "#bc8cff", border: "none", borderRadius: 9, color: loading ? T.muted : "#0d1117", fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", ...F }}>
+              {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ →"}
+            </button>
+          </div>
+        </div>
+
+        <p style={{ textAlign: "center", color: T.muted, fontSize: 13, marginTop: 14, ...F }}>
+          สมัครเป็นตัวแทน?{" "}
+          <button onClick={() => navigate("/register")} style={{ background: "none", border: "none", color: "#bc8cff", cursor: "pointer", fontSize: 13, padding: 0, ...F }}>
+            สมัครสมาชิก
+          </button>
+        </p>
+      </div>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  REGISTER PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const RegisterPageConnected = () => {
+  const navigate = useNavigate();
+
+  const handleRegister = async (u: any) => {
+    try {
+      await resellerRegister({
+        name:            u.name,
+        email:           u.email,
+        phone:           u.phone,
+        password:        u.password,
+        confirmPassword: u.password,
+        shopName:        u.shopName,
+        address:         u.address,
+      });
+      navigate("/register/success");
+    } catch (err: any) {
+      throw err; // ให้ RegisterPage จัดการ error เอง
+    }
+  };
+
+  return (
+    <RegisterPage
+      onRegister={handleRegister as any}
+      onGoLogin={() => navigate("/login")}
+      existingResellers={[]} // validation จาก backend แทน
+    />
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  RESELLER PAGES (connected)
+// ════════════════════════════════════════════════════════════
+
+// Hook สำหรับดึงข้อมูล reseller จาก session หรือ /api/me
+const useResellerInfo = (session: SessionUser) => {
+  const [info,    setInfo]    = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const { setSession } = useAuth();
+
+  useEffect(() => {
+    // ถ้ามี id แล้วใช้ได้เลย
+    if (session.id) {
+      setInfo({
+        id: session.id, name: session.name ?? "", email: session.email,
+        phone: "", shopName: "", shopSlug: session.shopSlug ?? "",
+        address: "", status: "approved" as any, password: "",
+      });
+      setLoading(false);
+      return;
+    }
+    // ถ้าไม่มี id → fetch /api/me
+    fetchMe()
+      .then(me => {
+        // อัปเดต session ด้วย
+        setSession({ id: me.id, email: me.email, role: "reseller", name: me.name, shopSlug: me.shopSlug });
+        setInfo({
+          id: me.id, name: me.name, email: me.email,
+          phone: me.phone, shopName: me.shopName, shopSlug: me.shopSlug,
+          address: me.address, status: "approved" as any, password: "",
+        });
+      })
+      .catch(() => setInfo(null))
+      .finally(() => setLoading(false));
+  }, [session.id]);
+
+  return { info, loading };
+};
+
+const ResellerDashboardConnected = ({ session }: { session: SessionUser }) => {
+  const { info, loading: infoLoading } = useResellerInfo(session);
+  const [shopProducts, setShopProducts] = useState<ResellerProductAPI[]>([]);
+  const [orders,       setOrders]       = useState<any[]>([]);
+  const [wallet,       setWallet]       = useState<WalletAPI | null>(null);
+  const [loading,      setLoading]      = useState(true);
+
+  useEffect(() => {
+    if (!info?.id) return;
+    Promise.all([
+      fetchMyProducts(info.id),
+      fetchResellerOrders(info.id),
+      fetchWallet(info.id),
+    ])
+      .then(([prods, ords, wal]) => { setShopProducts(prods); setOrders(ords); setWallet(wal); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [info?.id]);
+
+  if (infoLoading || loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (!info) return <div style={{ color: T.red, padding: 40, textAlign: "center", ...F }}>❌ ไม่พบข้อมูล กรุณา Login ใหม่</div>;
+
+  const mappedShopProducts = shopProducts.map(p => ({
+    id: p.id, productId: p.id, shopId: info.id,
+    name: p.name, imagePreview: null, description: "",
+    cost: 0, minPrice: 0, stock: p.stock, sellingPrice: p.selling_price,
+  }));
+
+  const walletEntries = wallet?.logs.map(l => ({
+    id: l.id, orderId: String(l.orderId), shop: info.shopName,
+    profit: Number(l.amount), at: l.createdAt,
+  })) ?? [];
+
+  // หา profit แต่ละ order จาก wallet logs
+  const profitByOrderId = new Map<string, number>();
+  walletEntries.forEach(w => profitByOrderId.set(w.orderId, w.profit));
+
+  const mappedOrders = orders.map(o => {
+    const profit = profitByOrderId.get(String(o.orderId)) ?? 0;
+    return {
+      id: String(o.orderId), resellerId: info.id,
+      resellerName: info.name, shopName: info.shopName,
+      customer: o.customerName, phone: "", address: "",
+      product: o.productName ?? "", productId: 0,
+      items: o.productName ? [{ productName: o.productName, qty: o.quantity ?? 0, sellingPrice: o.sellingPrice ?? 0, cost: 0 }] : [],
+      qty: o.quantity ?? 0, salePrice: o.sellingPrice ?? 0,
+      totalSale:   (o.sellingPrice ?? 0) * (o.quantity ?? 0),
+      totalProfit: profit,
+      cost: 0,
+      date: new Date().toISOString(), status: o.status as any,
+    };
+  });
+
+  return (
+    <ResellerDashboard
+      user={info}
+      shopProducts={mappedShopProducts}
+      orders={mappedOrders}
+      walletEntries={walletEntries}
+    />
+  );
+};
+
+const CatalogPageConnected = ({ session }: { session: SessionUser }) => {
+  const { info, loading: infoLoading } = useResellerInfo(session);
+  const [catalog,    setCatalog]    = useState<CatalogProductAPI[]>([]);
+  const [myProducts, setMyProducts] = useState<ResellerProductAPI[]>([]);
+  const [loading,    setLoading]    = useState(true);
+
+  const load = useCallback(() => {
+    if (!info?.id) return;
+    Promise.all([fetchCatalog(), fetchMyProducts(info.id)])
+      .then(([cat, mine]) => { setCatalog(cat); setMyProducts(mine); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [info?.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (infoLoading || loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (!info) return <div style={{ color: T.red, padding: 40, textAlign: "center", ...F }}>❌ ไม่พบข้อมูล กรุณา Login ใหม่</div>;
+
+  const products = catalog.map(p => ({
+    id: p.id, name: p.name, imagePreview: null, description: "",
+    cost: p.cost_price, minPrice: p.min_price, stock: p.stock,
+  }));
+
+  const shopProducts = myProducts.map(p => ({
+    id: p.id, productId: p.id, shopId: info.id,
+    name: p.name, imagePreview: null, description: "",
+    cost: 0, minPrice: 0, stock: p.stock, sellingPrice: p.selling_price,
+  }));
+
+  const handleAddToShop = async (p: any, price: number) => {
+    await addProductToShop({ reseller_id: info.id, product_id: p.id, selling_price: price });
+    load();
+  };
+
+  const handleUpdatePrice = async (sp: any, price: number) => {
+    await addProductToShop({ reseller_id: info.id, product_id: sp.productId, selling_price: price });
+    load();
+  };
+
+  return (
+    <CatalogPage
+      user={info}
+      products={products}
+      shopProducts={shopProducts}
+      onAddToShop={handleAddToShop}
+      onUpdatePrice={handleUpdatePrice}
+    />
+  );
+};
+
+const MyProductsConnected = ({ session }: { session: SessionUser }) => {
+  const { info, loading: infoLoading } = useResellerInfo(session);
+  const [myProducts, setMyProducts] = useState<ResellerProductAPI[]>([]);
+  const [catalog,    setCatalog]    = useState<CatalogProductAPI[]>([]);
+  const [loading,    setLoading]    = useState(true);
+
+  const load = useCallback(() => {
+    if (!info?.id) return;
+    Promise.all([fetchMyProducts(info.id), fetchCatalog()])
+      .then(([mine, cat]) => { setMyProducts(mine); setCatalog(cat); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [info?.id]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (infoLoading || loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (!info) return <div style={{ color: T.red, padding: 40, textAlign: "center", ...F }}>❌ ไม่พบข้อมูล กรุณา Login ใหม่</div>;
+
+  const shopProducts = myProducts.map(p => {
+    const catItem = catalog.find(c => c.id === p.id);
+    return {
+      id: p.id, productId: p.id, shopId: info.id,
+      name: p.name, imagePreview: null, description: "",
+      cost: catItem?.cost_price ?? 0, minPrice: catItem?.min_price ?? 0,
+      stock: p.stock, sellingPrice: p.selling_price,
+    };
+  });
+
+  const handleUpdatePrice = async (sp: any, price: number) => {
+    await addProductToShop({ reseller_id: info.id, product_id: sp.productId, selling_price: price });
+    load();
+  };
+
+  const handleRemove = (_id: number) => {
+    alert("ยังไม่รองรับการลบสินค้าออกจากร้าน (ต้องเพิ่ม API ฝั่ง Backend)");
+  };
+
+  return (
+    <MyProductsPage
+      shopProducts={shopProducts}
+      onRemove={handleRemove}
+      onUpdatePrice={handleUpdatePrice}
+    />
+  );
+};
+
+const ResellerOrdersConnected = ({ session }: { session: SessionUser }) => {
+  const { info, loading: infoLoading } = useResellerInfo(session);
+  const [orders,  setOrders]  = useState<any[]>([]);
+  const [wallet,  setWallet]  = useState<WalletAPI | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!info?.id) return;
+    Promise.all([
+      fetchResellerOrders(info.id),
+      fetchWallet(info.id),
+    ])
+      .then(([ords, wal]) => { setOrders(ords); setWallet(wal); })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [info?.id]);
+
+  if (infoLoading || loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (!info) return <div style={{ color: T.red, padding: 40, textAlign: "center", ...F }}>❌ ไม่พบข้อมูล กรุณา Login ใหม่</div>;
+
+  // หา profit แต่ละ order จาก wallet logs
+  const profitByOrderId = new Map<string, number>();
+  (wallet?.logs ?? []).forEach(l => profitByOrderId.set(String(l.orderId), Number(l.amount)));
+
+  const mappedOrders = orders.map(o => {
+    const profit = profitByOrderId.get(String(o.orderId)) ?? 0;
+    return {
+      id: String(o.orderId), resellerId: info.id,
+      resellerName: info.name, shopName: info.shopName,
+      customer: o.customerName, phone: "", address: "",
+      product: o.productName ?? "", productId: 0,
+      items: o.productName ? [{ productName: o.productName, qty: o.quantity ?? 0, sellingPrice: o.sellingPrice ?? 0, cost: 0 }] : [],
+      qty: o.quantity ?? 0, salePrice: o.sellingPrice ?? 0,
+      totalSale:   (o.sellingPrice ?? 0) * (o.quantity ?? 0),
+      totalProfit: profit,
+      cost: 0,
+      date: new Date().toISOString(), status: o.status as any,
+    };
+  });
+
+  return <ResellerOrders user={info} orders={mappedOrders} />;
+};
+
+const WalletPageConnected = ({ session }: { session: SessionUser }) => {
+  const { info, loading: infoLoading } = useResellerInfo(session);
+  const [wallet,  setWallet]  = useState<WalletAPI | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!info?.id) return;
+    fetchWallet(info.id)
+      .then(setWallet)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [info?.id]);
+
+  if (infoLoading || loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+
+  const walletEntries = wallet?.logs.map(l => ({
+    id: l.id, orderId: String(l.orderId), shop: info?.shopName ?? "",
+    profit: l.amount, at: l.createdAt,
+  })) ?? [];
+
+  return <WalletPage walletEntries={walletEntries} />;
+};
+
+// ════════════════════════════════════════════════════════════
+//  SHOP PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const ShopPageConnected = () => {
+  const { slug } = useParams<{ slug: string }>();
+  const [products, setProducts] = useState<ShopProductAPI[]>([]);
+  const [loading,  setLoading]  = useState(true);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (!slug) return;
+    fetchShopProducts(slug)
+      .then(setProducts)
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false));
+  }, [slug]);
+
+  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+
+  const fakeReseller = notFound ? [] : [{
+    id: 0, name: "", email: "", phone: "",
+    shopName: slug ?? "", shopSlug: slug ?? "", address: "",
+    status: "approved" as any, password: "",
+  }];
+
+  const fakeShopProducts = products.map(p => ({
+    id: p.product_id, productId: p.product_id, shopId: 0,
+    name: p.product_name, imagePreview: p.image,
+    description: "", cost: 0, minPrice: 0,
+    stock: p.stock, sellingPrice: p.price,
+  }));
+
+  return <ShopPage resellers={fakeReseller} shopProducts={fakeShopProducts} />;
+};
+
+// ════════════════════════════════════════════════════════════
+//  CHECKOUT PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const CheckoutPageConnected = () => {
+  const { slug }           = useParams<{ slug: string }>();
+  const [searchParams]     = useSearchParams();
+  const nav                = useNavigate();
+  const productId          = Number(searchParams.get("productId"));
+
+  const [products, setProducts] = useState<ShopProductAPI[]>([]);
+  const [shopId,   setShopId]   = useState<number>(0);
+  const [loading,  setLoading]  = useState(true);
+
+  useEffect(() => {
+    if (!slug) return;
+    Promise.all([
+      fetchShopProducts(slug),
+      fetch(`http://localhost:8080/shop/info/${slug}`, { credentials: "include" })
+        .then(r => r.ok ? r.json() : null),
+    ])
+      .then(([prods, info]) => {
+        setProducts(prods);
+        if (info?.id) setShopId(info.id);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [slug]);
+
+  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+
+  const fakeReseller = [{
+    id: 0, name: "", email: "", phone: "",
+    shopName: slug ?? "", shopSlug: slug ?? "", address: "",
+    status: "approved" as any, password: "",
+  }];
+
+  const fakeShopProducts = products.map(p => ({
+    id: p.product_id, productId: p.product_id, shopId: 0,
+    name: p.product_name, imagePreview: p.image,
+    description: "", cost: 0, minPrice: 0,
+    stock: p.stock, sellingPrice: p.price,
+  }));
+
+  const handlePlaceOrder = async (order: any) => {
+    try {
+      const orderNumber = await createOrder({
+        shop_id:          shopId,
+        customer_name:    order.customer,
+        customer_phone:   order.phone,
+        shipping_address: order.address,
+        items: order.items.map((i: any) => ({
+          product_id: i.productId ?? productId,
+          quantity:   i.qty,
+        })),
+      });
+      nav(`/shop/${slug}/payment/${orderNumber}`);
+    } catch (err: any) {
+      alert("เกิดข้อผิดพลาด: " + err.message);
+    }
+  };
+
+  return (
+    <CheckoutPage
+      resellers={fakeReseller}
+      shopProducts={fakeShopProducts}
+      onPlaceOrder={handlePlaceOrder as any}
+    />
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  TRACK ORDER PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const TrackOrderPageConnected = () => {
+  const [searchParams]              = useSearchParams();
+  const [orderData, setOrderData]   = useState<TrackOrderAPI | null>(null);
+  const [notFound,  setNotFound]    = useState(false);
+  const [loading,   setLoading]     = useState(false);
+
+  const orderNumber = searchParams.get("orderId");
+
+  useEffect(() => {
+    if (!orderNumber) return;
+    setLoading(true);
+    trackOrder(orderNumber)
+      .then(setOrderData)
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false));
+  }, [orderNumber]);
+
+  const fakeOrders = orderData ? [{
+    id: orderData.orderNumber,
+    resellerId: 0, resellerName: "", shopName: "",
+    customer: orderData.customerName,
+    phone: orderData.customerPhone,
+    address: orderData.shippingAddress,
+    product: orderData.items[0]?.productName ?? "", productId: 0,
+    items: orderData.items.map(i => ({
+      productName: i.productName, qty: i.quantity,
+      sellingPrice: i.sellingPrice, cost: 0,
+    })),
+    qty: orderData.items.reduce((s, i) => s + i.quantity, 0),
+    salePrice: 0, totalSale: orderData.totalAmount,
+    totalProfit: 0, cost: 0,
+    date: orderData.createdAt, status: orderData.status as any,
+  }] : [];
+
+  return <TrackOrderPage orders={fakeOrders} />;
+};
+
+// ════════════════════════════════════════════════════════════
+//  ADMIN PRODUCT FORM — /admin/products/add & /admin/products/edit/:id
+// ════════════════════════════════════════════════════════════
+const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
+  const navigate  = useNavigate();
+  const { id }    = useParams<{ id: string }>();
+  const [product, setProduct]   = useState<ProductAPI | null>(null);
+  const [orders,  setOrders]    = useState<OrderAPI[]>([]);
+  const [loading, setLoading]   = useState(mode === "edit");
+  const [saving,  setSaving]    = useState(false);
+  const [error,   setError]     = useState("");
+
+  useEffect(() => {
+    if (mode === "edit" && id) {
+      Promise.all([fetchAllProducts(), fetchAllOrders()])
+        .then(([prods, ords]) => {
+          const found = prods.find(p => p.id === Number(id));
+          if (!found) { setError("ไม่พบสินค้านี้"); return; }
+          setProduct(found);
+          setOrders(ords);
+        })
+        .catch(e => setError(e.message))
+        .finally(() => setLoading(false));
+    } else {
+      fetchAllOrders().then(setOrders).catch(() => {});
+    }
+  }, [mode, id]);
+
+  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
+
+  const mappedProduct = product ? {
+    id: product.id, name: product.name, imagePreview: product.imageUrl ?? null,
+    description: product.description ?? "", cost: product.costPrice,
+    minPrice: product.minPrice, stock: product.stock,
+  } : null;
+
+  const mappedOrders = orders.map(o => ({
+    id: o.orderNumber, resellerId: 0, resellerName: "", shopName: "",
+    customer: o.customerName, phone: o.customerPhone, address: o.shippingAddress,
+    product: "", productId: 0, items: [],
+    qty: 0, salePrice: 0, totalSale: o.totalAmount, totalProfit: o.resellerProfit,
+    cost: 0, date: o.createdAt, status: o.status as any,
+  }));
+
+  const handleSave = async (data: Omit<any, "id">) => {
+    setSaving(true);
+    try {
+      const payload = {
+        name: data.name, description: data.description,
+        imageUrl: data.imagePreview ?? null,
+        costPrice: data.cost, minPrice: data.minPrice, stock: data.stock,
+      };
+      if (mode === "edit" && id) {
+        await updateProduct(Number(id), payload);
+      } else {
+        await createProduct(payload);
+      }
+      navigate("/admin/products");
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // ใช้ ProductFormModal เปิดอยู่เสมอ (open=true) ในหน้าเต็ม
+  return (
+    <div>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
+        <button onClick={() => navigate("/admin/products")}
+          style={{ background: "none", border: `1px solid ${T.border}`, borderRadius: 8, color: T.muted, cursor: "pointer", padding: "7px 14px", fontSize: 13, ...F }}>
+          ← กลับ
+        </button>
+        <div>
+          <h2 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: 0, ...F }}>
+            {mode === "add" ? "เพิ่มสินค้าใหม่" : "แก้ไขสินค้า"}
+          </h2>
+          <p style={{ color: T.muted, fontSize: 12, margin: "2px 0 0", ...F }}>
+            URL: {mode === "add" ? "/admin/products/add" : `/admin/products/edit/${id}`}
+          </p>
+        </div>
+      </div>
+
+      {error && <div style={{ color: T.red, marginBottom: 16, ...F }}>❌ {error}</div>}
+
+      {/* เรนเดอร์ ProductFormModal แบบ inline (ไม่ใช่ popup) */}
+      <div style={{ maxWidth: 560 }}>
+        <ProductFormModalInline
+          product={mappedProduct}
+          orders={mappedOrders}
+          onSave={handleSave}
+          saving={saving}
+        />
+      </div>
+    </div>
+  );
+};
+
+// ── Inline form (ไม่ใช่ modal — render ในหน้าเต็ม) ──────────
+const ProductFormModalInline = ({
+  product, orders, onSave, saving,
+}: {
+  product: any; orders: any[]; onSave: (d: any) => void; saving: boolean;
+}) => {
+  const [form,   setForm]   = useState({
+    name:         product?.name         ?? "",
+    imagePreview: product?.imagePreview ?? null as string | null,
+    description:  product?.description  ?? "",
+    cost:         product?.cost         ?? "",
+    minPrice:     product?.minPrice     ?? "",
+    stock:        product?.stock        ?? "",
+  });
+  const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
+
+  const handleImg = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!["image/jpeg", "image/png"].includes(file.type)) { setErrors(er => ({ ...er, image: "ไฟล์ต้องเป็น JPG หรือ PNG" })); return; }
+    if (file.size > 5 * 1024 * 1024)                      { setErrors(er => ({ ...er, image: "ขนาดไม่เกิน 5MB" })); return; }
+    const reader = new FileReader();
+    reader.onload = ev => set("imagePreview", ev.target?.result as string);
+    reader.readAsDataURL(file);
+    setErrors(er => ({ ...er, image: undefined as any }));
+  };
+
+  const validate = () => {
+    const e: Record<string, string> = {};
+    if (!form.name.trim())              e.name     = "กรุณากรอกชื่อสินค้า";
+    if (!form.cost || +form.cost <= 0)  e.cost     = "ราคาทุนต้องมากกว่า 0";
+    if (!form.minPrice)                 e.minPrice = "กรุณากรอกราคาขั้นต่ำ";
+    if (+form.minPrice < +form.cost)    e.minPrice = "ราคาขั้นต่ำ < ราคาทุน ไม่ได้ (BR-07)";
+    if (form.stock === "" || +form.stock < 0) e.stock = "สต็อกต้อง >= 0";
+    return e;
+  };
+
+  const handleSubmit = () => {
+    const e = validate();
+    if (Object.keys(e).length) { setErrors(e); return; }
+    onSave({ name: form.name, imagePreview: form.imagePreview, description: form.description, cost: +form.cost, minPrice: +form.minPrice, stock: +form.stock });
+  };
+
+  const inp = (style?: any) => ({ width: "100%", padding: "9px 12px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 14, boxSizing: "border-box" as any, outline: "none", ...F, ...style });
+  const lbl = { display: "block", color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase" as any, letterSpacing: ".05em", marginBottom: 6, ...F };
+  const err = { color: T.red, fontSize: 12, margin: "4px 0 0", ...F };
+  const box = { background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "20px 22px", marginBottom: 16 };
+
+  return (
+    <div>
+      <div style={box}>
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbl}>ชื่อสินค้า <span style={{ color: T.red }}>*</span></label>
+          <input value={form.name} onChange={e => set("name", e.target.value)} placeholder="เช่น เสื้อยืดคอกลม สีดำ" style={inp(errors.name ? { borderColor: T.red } : {})} />
+          {errors.name && <p style={err}>{errors.name}</p>}
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbl}>รูปสินค้า (JPG/PNG ≤ 5MB)</label>
+          <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+            {form.imagePreview && (
+              <img src={form.imagePreview} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: `1px solid ${T.border}`, flexShrink: 0 }} />
+            )}
+            <label style={{ flex: 1, padding: "10px", background: T.bg, border: `1px dashed ${errors.image ? T.red : T.border}`, borderRadius: 8, color: T.muted, cursor: "pointer", fontSize: 13, textAlign: "center", ...F }}>
+              {form.imagePreview ? "เปลี่ยนรูป" : "📁 คลิกเพื่ออัปโหลด"}
+              <input type="file" accept="image/jpeg,image/png" onChange={handleImg} style={{ display: "none" }} />
+            </label>
+          </div>
+          {errors.image && <p style={err}>{errors.image}</p>}
+        </div>
+
+        <div style={{ marginBottom: 16 }}>
+          <label style={lbl}>รายละเอียด</label>
+          <textarea value={form.description} onChange={e => set("description", e.target.value)} placeholder="ไม่บังคับ" rows={3}
+            style={{ ...inp(), resize: "vertical", minHeight: 70 }} />
+        </div>
+
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+          <div>
+            <label style={lbl}>ราคาทุน (บาท) <span style={{ color: T.red }}>*</span></label>
+            <input type="number" value={form.cost} onChange={e => set("cost", e.target.value)} placeholder="0" min="0"
+              style={inp(errors.cost ? { borderColor: T.red } : {})} />
+            {errors.cost && <p style={err}>{errors.cost}</p>}
+          </div>
+          <div>
+            <label style={lbl}>ราคาขั้นต่ำ (บาท) <span style={{ color: T.red }}>*</span></label>
+            <input type="number" value={form.minPrice} onChange={e => set("minPrice", e.target.value)} placeholder="0" min="0"
+              style={inp(errors.minPrice ? { borderColor: T.red } : {})} />
+            {errors.minPrice && <p style={err}>{errors.minPrice}</p>}
+            {+form.minPrice >= +form.cost && +form.cost > 0 && (
+              <p style={{ color: T.green, fontSize: 11, margin: "4px 0 0", ...F }}>กำไรขั้นต่ำ: ฿{(+form.minPrice - +form.cost).toLocaleString()}</p>
+            )}
+          </div>
+        </div>
+
+        <div>
+          <label style={lbl}>จำนวนสต็อก <span style={{ color: T.red }}>*</span></label>
+          <input type="number" value={form.stock} onChange={e => set("stock", e.target.value)} placeholder="0" min="0"
+            style={inp(errors.stock ? { borderColor: T.red } : {})} />
+          {errors.stock && <p style={err}>{errors.stock}</p>}
+        </div>
+      </div>
+
+      <button onClick={handleSubmit} disabled={saving}
+        style={{ width: "100%", padding: 12, background: saving ? "rgba(88,166,255,.3)" : T.accent, border: "none", borderRadius: 9, color: saving ? T.muted : "#0d1117", fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", ...F }}>
+        {saving ? "กำลังบันทึก..." : "💾 บันทึกสินค้า"}
+      </button>
+    </div>
+  );
+};
+
+// ════════════════════════════════════════════════════════════
+//  APP ROOT
+// ════════════════════════════════════════════════════════════
+
+const SESSION_KEY = "rms_session";
+
+export default function App() {
+  // โหลด session จาก localStorage ตอนเริ่มต้น
+  const [session, setSessionState] = useState<SessionUser | null>(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const navigate = useNavigate();
+
+  // setSession — บันทึกลง localStorage ด้วยทุกครั้ง
+  const setSession = (u: SessionUser | null) => {
+    setSessionState(u);
+    if (u) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(u));
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  };
+
+  const logout = async () => {
+    try { await adminLogout(); } catch {}
+    const wasAdmin = session?.role === "admin";
+    setSession(null);
+    navigate(wasAdmin ? "/admin/login" : "/login");
+  };
+
+  const resellerInfo = session?.role === "reseller" ? {
+    id: session.id ?? 0, name: session.name ?? "", email: session.email,
+    phone: "", shopName: "", shopSlug: session.shopSlug ?? "",
+    address: "", status: "approved" as any, password: "",
+  } : null;
+
+  return (
+    <AuthContext.Provider value={{ session, setSession, logout }}>
+      <Routes>
+
+        {/* ── Default — redirect ตาม session ── */}
+        <Route path="/" element={
+          session?.role === "admin"    ? <Navigate to="/admin/dashboard"    replace /> :
+          session?.role === "reseller" ? <Navigate to="/reseller/dashboard" replace /> :
+                                         <Navigate to="/login"              replace />
+        } />
+        {/* ── ถ้า login อยู่แล้วเข้า /login หรือ /admin/login → redirect ไป dashboard ── */}
+        <Route path="/login"       element={session?.role === "reseller" ? <Navigate to="/reseller/dashboard" replace /> : <LoginPage      setSession={setSession} />} />
+        <Route path="/admin/login" element={session?.role === "admin"    ? <Navigate to="/admin/dashboard"    replace /> : <AdminLoginPage setSession={setSession} />} />
+
+        {/* ── Register ── */}
+        <Route path="/register"         element={<RegisterPageConnected />} />
+        <Route path="/register/success" element={<RegisterSuccessPage onGoLogin={() => navigate("/login")} />} />
+
+        {/* ── Admin (BR-03: ไม่ login → /admin/login, BR-04: reseller → /admin/forbidden) ── */}
+        <Route path="/admin/forbidden"          element={<ForbiddenPage />} />
+        <Route path="/admin/dashboard"          element={<RequireAdmin><AdminLayout><AdminDashboardConnected /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/products"           element={<RequireAdmin><AdminLayout><AdminProductsConnected  /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/products/add"       element={<RequireAdmin><AdminLayout><AdminProductFormConnected mode="add"  /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/products/edit/:id"  element={<RequireAdmin><AdminLayout><AdminProductFormConnected mode="edit" /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/resellers"          element={<RequireAdmin><AdminLayout><AdminResellersConnected /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/orders"             element={<RequireAdmin><AdminLayout><AdminOrdersConnected    /></AdminLayout></RequireAdmin>} />
+
+        {/* ── Reseller ── */}
+        <Route path="/reseller/dashboard"   element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><ResellerDashboardConnected session={session!} /></ResellerLayout></RequireReseller>} />
+        <Route path="/reseller/catalog"     element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><CatalogPageConnected        session={session!} /></ResellerLayout></RequireReseller>} />
+        <Route path="/reseller/my-products" element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><MyProductsConnected          session={session!} /></ResellerLayout></RequireReseller>} />
+        <Route path="/reseller/orders"      element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><ResellerOrdersConnected      session={session!} /></ResellerLayout></RequireReseller>} />
+        <Route path="/reseller/wallet"      element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><WalletPageConnected           session={session!} /></ResellerLayout></RequireReseller>} />
+
+        {/* ── Customer (ไม่ต้อง login) ── */}
+        <Route path="/shop/:slug"                  element={<ShopPageConnected />} />
+        <Route path="/shop/:slug/checkout"         element={<CheckoutPageConnected />} />
+        <Route path="/shop/:slug/payment/:orderId" element={<PaymentPageConnected />} />
+        <Route path="/track-order"                 element={<TrackOrderPageConnected />} />
+
+        {/* ── 404 ── */}
+        <Route path="*" element={<Navigate to="/login" replace />} />
+
+      </Routes>
+    </AuthContext.Provider>
+  );
+}
+
+// ════════════════════════════════════════════════════════════
+//  PAYMENT PAGE (connected)
+// ════════════════════════════════════════════════════════════
+const PaymentPageConnected = () => {
+  const { slug, orderId } = useParams<{ slug: string; orderId: string }>();
+  const nav               = useNavigate();
+  const [orderData, setOrderData] = useState<TrackOrderAPI | null>(null);
+  const [loading,   setLoading]   = useState(true);
+
+  useEffect(() => {
+    if (!orderId) return;
+    // ดึงข้อมูล order จริงจาก backend
+    trackOrder(orderId)
+      .then(setOrderData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [orderId]);
+
+  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+
+  // แปลงข้อมูลจาก backend ให้ตรงกับ PaymentPage props
+  const order = orderId ? [{
+    id:            orderId,
+    resellerId:    0,
+    resellerName:  "",
+    shopName:      slug ?? "",
+    customer:      orderData?.customerName    ?? "",
+    phone:         orderData?.customerPhone   ?? "",
+    address:       orderData?.shippingAddress ?? "",
+    product:       orderData?.items[0]?.productName ?? "",
+    productId:     0,
+    items: (orderData?.items ?? []).map(i => ({
+      productName:  i.productName,
+      qty:          i.quantity,
+      sellingPrice: i.sellingPrice,
+      cost:         0,
+    })),
+    qty:          orderData?.items.reduce((s, i) => s + i.quantity, 0) ?? 1,
+    salePrice:    orderData?.items[0]?.sellingPrice ?? 0,
+    totalSale:    orderData?.totalAmount    ?? 0,
+    totalProfit:  0,
+    cost:         0,
+    date:         orderData?.createdAt      ?? new Date().toISOString(),
+    status:       "pending" as any,
+  }] : [];
+
+  const handlePaymentSuccess = async (oid: string) => {
+    // BR-28: ชำระเงินสำเร็จ → redirect ไปหน้า track
+    nav(`/track-order?orderId=${oid}`);
+  };
+
+  return <PaymentPage orders={order} onPaymentSuccess={handlePaymentSuccess} />;
+};
