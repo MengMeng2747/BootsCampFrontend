@@ -27,20 +27,24 @@ export interface AddProductPayload {
 
 export interface ResellerOrderAPI {
   orderId:      number;
+  orderNumber:  string | null;   // ← เลขออเดอร์จริง
   customerName: string;
   productName:  string | null;
   quantity:     number | null;
   sellingPrice: number | null;
+  totalAmount:  number | null;   // ← ยอดขายรวม
   status:       string;
+  createdAt:    string | null;   // ← วันที่จริง
 }
 
 export interface WalletLogAPI {
-  id:        number;
-  orderId:   number;
-  userId:    number;
-  amount:    number;
-  type:      string;
-  createdAt: string;
+  id:          number;
+  orderId:     number;
+  orderNumber: string | null;   // ← เลขออเดอร์จริง
+  userId:      number;
+  amount:      number;
+  type:        string;
+  createdAt:   string;
 }
 
 export interface WalletAPI {
@@ -59,6 +63,9 @@ export const fetchMyProducts = (resellerId: number): Promise<ResellerProductAPI[
 
 export const addProductToShop = (payload: AddProductPayload): Promise<string> =>
   api.post<string>("/reseller/catalog/add", payload);
+
+export const removeProductFromShop = (resellerId: number, productId: number): Promise<string> =>
+  api.delete<string>(`/reseller/catalog/remove?resellerId=${resellerId}&productId=${productId}`);
 
 // ══ Orders ═════════════════════════════════════════════════════════════════════
 

@@ -40,13 +40,15 @@ export interface ResellerAPI {
   role:      string;
   status:    string;
   address:   string;
-  createdAt?: string;
+  shopName?: string;   // ← เพิ่ม: join จาก shops table
+  createdAt?: string;  // ← เพิ่ม: วันที่สมัครจริงจาก DB
 }
 
 export interface OrderAPI {
   id:              number;
   orderNumber:     string;
   shopId:          number;
+  shopName:        string;   // ← เพิ่ม: join จาก shops table
   customerName:    string;
   customerPhone:   string;
   shippingAddress: string;

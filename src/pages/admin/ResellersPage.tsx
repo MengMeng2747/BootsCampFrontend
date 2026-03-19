@@ -44,13 +44,7 @@ export const ResellersPage: FC<ResellersPageProps> = ({ resellers, setResellers 
   const countOf = (s: ResellerStatus) => resellers.filter(r => r.status === s).length;
 
   const filtered = tab === "all" ? resellers : resellers.filter(r => r.status === tab);
-  const sorted   = [...filtered].sort((a, b) => {
-    const order: Record<ResellerStatus, number> = { pending: 0, approved: 1, rejected: 2 };
-    return order[a.status] - order[b.status];
-  });
-
-  const fmt = (d: string) =>
-    new Date(d).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+  const sorted   = [...filtered].sort((a, b) => b.id - a.id);
 
   return (
     <div>
@@ -77,9 +71,13 @@ export const ResellersPage: FC<ResellersPageProps> = ({ resellers, setResellers 
             <Tr key={r.id}>
               <Td style={{ fontWeight: 600 }}>{r.name}</Td>
               <Td style={{ color: T.muted, fontSize: 12 }}>{r.email}</Td>
-              <Td>{r.shopName}</Td>
+              <Td style={{ fontWeight: 600, color: T.accent }}>{r.shopName || "—"}</Td>
               <Td style={{ color: T.muted, fontSize: 12 }}>{r.phone}</Td>
-              <Td style={{ color: T.dim,   fontSize: 12 }}>{fmt(new Date().toISOString())}</Td>
+              <Td style={{ color: T.dim,   fontSize: 12 }}>
+                {(r as any).createdAt
+                  ? new Date((r as any).createdAt).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })
+                  : "—"}
+              </Td>
               <Td><StatusBadge status={r.status} /></Td>
               <Td>
                 <div style={{ display: "flex", gap: 6 }}>

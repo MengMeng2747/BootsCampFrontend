@@ -21,21 +21,15 @@ interface AdminSidebarProps {
   pendingCount: number;
 }
 
-export const AdminSidebar: FC<AdminSidebarProps> = ({ page, setPage, onLogout, collapsed, setCollapsed, pendingCount }) => (
-  <aside style={{ width: collapsed ? 60 : 220, minHeight: "100vh", background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width .2s", flexShrink: 0 }}>
-    <div style={{ padding: collapsed ? "18px 14px" : "18px 20px", borderBottom: `1px solid ${T.border2}`, display: "flex", alignItems: "center", gap: 10 }}>
+export const AdminSidebar: FC<AdminSidebarProps> = ({ page, setPage, onLogout, pendingCount }) => (
+  <aside style={{ width: 220, minHeight: "100vh", background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", flexShrink: 0, position: "sticky", top: 0, height: "100vh", overflowY: "auto" }}>
+    <div style={{ padding: "18px 20px", borderBottom: `1px solid ${T.border2}`, display: "flex", alignItems: "center", gap: 10 }}>
       <span style={{ fontSize: 22, flexShrink: 0 }}>🛡️</span>
-      {!collapsed && (
-        <div>
-          <div style={{ color: T.text, fontWeight: 700, fontSize: 15, ...F }}>RMS Admin</div>
-          <div style={{ color: T.muted, fontSize: 10, ...F }}>TOR-RMS-2026-001</div>
-        </div>
-      )}
+      <div>
+        <div style={{ color: T.text, fontWeight: 700, fontSize: 15, ...F }}>RMS Admin</div>
+        <div style={{ color: T.muted, fontSize: 10, ...F }}>TOR-RMS-2026-001</div>
+      </div>
     </div>
-
-    <button onClick={() => setCollapsed(c => !c)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", padding: "8px 0", textAlign: "center", fontSize: 14 }}>
-      {collapsed ? "›" : "‹"}
-    </button>
 
     <nav style={{ flex: 1, padding: 8 }}>
       {navItems.map(n => {
@@ -45,22 +39,20 @@ export const AdminSidebar: FC<AdminSidebarProps> = ({ page, setPage, onLogout, c
           <button
             key={n.id}
             onClick={() => setPage(n.id)}
-            title={collapsed ? n.label : undefined}
-            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: collapsed ? "10px 0" : "10px 12px", justifyContent: collapsed ? "center" : "flex-start", marginBottom: 2, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "rgba(88,166,255,.15)" : "transparent", color: active ? T.accent : T.muted, position: "relative", ...F }}
+            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", justifyContent: "flex-start", marginBottom: 2, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "rgba(88,166,255,.15)" : "transparent", color: active ? T.accent : T.muted, position: "relative", ...F }}
           >
             <span style={{ fontSize: 16, flexShrink: 0 }}>{n.icon}</span>
-            {!collapsed && <span style={{ fontSize: 13, fontWeight: active ? 700 : 400 }}>{n.label}</span>}
-            {badge && !collapsed && <span style={{ background: T.red, color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "1px 6px", marginLeft: "auto" }}>{pendingCount}</span>}
-            {badge &&  collapsed && <span style={{ position: "absolute", top: 4, right: 4, background: T.red, borderRadius: "50%", width: 8, height: 8 }} />}
+            <span style={{ fontSize: 13, fontWeight: active ? 700 : 400 }}>{n.label}</span>
+            {badge && <span style={{ background: T.red, color: "#fff", borderRadius: 10, fontSize: 10, fontWeight: 700, padding: "1px 6px", marginLeft: "auto" }}>{pendingCount}</span>}
           </button>
         );
       })}
     </nav>
 
     <div style={{ padding: "12px 8px", borderTop: `1px solid ${T.border2}` }}>
-      <button onClick={onLogout} title={collapsed ? "ออกจากระบบ" : undefined} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: collapsed ? "10px 0" : "10px 12px", justifyContent: collapsed ? "center" : "flex-start", borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: T.muted, ...F }}>
+      <button onClick={onLogout} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: "10px 12px", justifyContent: "flex-start", borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: T.muted, ...F }}>
         <span style={{ fontSize: 16 }}>⏻</span>
-        {!collapsed && <span style={{ fontSize: 13 }}>ออกจากระบบ</span>}
+        <span style={{ fontSize: 13 }}>ออกจากระบบ</span>
       </button>
     </div>
   </aside>

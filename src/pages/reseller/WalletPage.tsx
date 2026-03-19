@@ -50,11 +50,10 @@ export const WalletPage: FC<WalletPageProps> = ({ walletEntries }) => {
       {walletEntries.length === 0
         ? <EmptyState icon="💸" message="ยังไม่มีรายการกำไร" />
         : (
-          <Table headers={["เลขออเดอร์","ร้าน","กำไรที่ได้รับ","วันที่"]}>
+          <Table headers={["เลขออเดอร์","กำไรที่ได้รับ","วันที่"]}>
             {[...walletEntries].reverse().map(w => (
               <Tr key={w.id}>
                 <Td style={{ color: T.accent, fontWeight: 600, fontSize: 12 }}>{w.orderId}</Td>
-                <Td style={{ color: T.muted }}>{w.shop}</Td>
                 <Td style={{ color: T.green, fontWeight: 700, fontSize: 16 }}>+฿{w.profit.toLocaleString()}</Td>
                 <Td style={{ color: T.dim,   fontSize: 12 }}>{fmt(w.at)}</Td>
               </Tr>

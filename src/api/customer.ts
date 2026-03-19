@@ -50,8 +50,8 @@ export const fetchShopProducts = (slug: string): Promise<ShopProductAPI[]> =>
 export const createOrder = (payload: CreateOrderPayload): Promise<string> =>
   api.post<string>("/orders", payload);
 
-export const payOrder = (orderId: number): Promise<string> =>
-  api.put<string>(`/orders/${orderId}/pay`);
+export const payOrder = (orderNumber: string): Promise<string> =>
+  api.put<string>(`/orders/${orderNumber}/pay`);
 
 export const trackOrder = (orderNumber: string): Promise<TrackOrderAPI> =>
   api.get<TrackOrderAPI>(`/orders/track/${orderNumber}`);

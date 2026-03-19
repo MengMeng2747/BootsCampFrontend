@@ -36,7 +36,7 @@ import {
   type AdminDashboard as AdminDashboardData, type ProductAPI, type ResellerAPI, type OrderAPI,
 } from "./api/admin";
 import {
-  fetchCatalog, fetchMyProducts, addProductToShop,
+  fetchCatalog, fetchMyProducts, addProductToShop, removeProductFromShop,
   fetchResellerOrders, fetchWallet,
   type CatalogProductAPI, type ResellerProductAPI, type WalletAPI,
 } from "./api/reseller";
@@ -72,7 +72,7 @@ const useAuth = () => useContext(AuthContext)!;
 // ════════════════════════════════════════════════════════════
 const RequireAdmin = ({ children }: { children: ReactNode }) => {
   const { session } = useAuth();
-  if (!session) return <Navigate to="/admin/login" replace />;
+  if (!session) return <Navigate to="/login" replace />;
   if (session.role !== "admin") return <Navigate to="/admin/forbidden" replace />;
   return <>{children}</>;
 };
@@ -93,9 +93,9 @@ const ForbiddenPage = () => {
         <div style={{ fontSize: 64, marginBottom: 16 }}>⛔</div>
         <h1 style={{ color: T.red, fontSize: 28, margin: "0 0 8px" }}>403 Forbidden</h1>
         <p style={{ color: T.muted, margin: "0 0 24px" }}>คุณไม่มีสิทธิ์เข้าใช้งานส่วน Admin (BR-04)</p>
-        <button onClick={() => navigate("/admin/login")}
+        <button onClick={() => navigate("/login")}
           style={{ padding: "10px 22px", background: T.accent, border: "none", borderRadius: 8, color: "#0d1117", fontWeight: 700, cursor: "pointer", ...F }}>
-          ← กลับหน้า Admin Login
+          ← กลับหน้า Login
         </button>
       </div>
     </div>
@@ -103,13 +103,12 @@ const ForbiddenPage = () => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN LAYOUT
+//  ADMIN LAYOUT — Sidebar locked
 // ════════════════════════════════════════════════════════════
 const AdminLayout = ({ children }: { children: ReactNode }) => {
   const { logout } = useAuth();
   const navigate   = useNavigate();
   const location   = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
 
   const pageMap: Record<string, any> = {
@@ -127,18 +126,18 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
   }, [location.pathname]);
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: T.bg }}>
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: T.bg }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <AdminSidebar
         page={currentPage}
         setPage={(p: string) => navigate(`/admin/${p}`)}
         onLogout={logout}
-        collapsed={collapsed}
-        setCollapsed={setCollapsed}
+        collapsed={false}
+        setCollapsed={() => {}}
         pendingCount={pendingCount}
       />
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <AdminTopbar page={currentPage} onToggle={() => setCollapsed(c => !c)} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+        <AdminTopbar page={currentPage} onToggle={() => {}} />
         <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>{children}</main>
       </div>
     </div>
@@ -146,13 +145,12 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  RESELLER LAYOUT
+//  RESELLER LAYOUT — Sidebar locked
 // ════════════════════════════════════════════════════════════
 const ResellerLayout = ({ children, resellerInfo }: { children: ReactNode; resellerInfo: any }) => {
   const { logout } = useAuth();
   const navigate   = useNavigate();
   const location   = useLocation();
-  const [collapsed, setCollapsed] = useState(false);
 
   const pageMap: Record<string, any> = {
     "/reseller/dashboard":   "dashboard",
@@ -164,18 +162,18 @@ const ResellerLayout = ({ children, resellerInfo }: { children: ReactNode; resel
   const currentPage = pageMap[location.pathname] ?? "dashboard";
 
   return (
-    <div style={{ display: "flex", minHeight: "100vh", background: T.bg }}>
+    <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: T.bg }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
       <ResellerSidebar
         page={currentPage}
         setPage={(p: string) => navigate(`/reseller/${p}`)}
         onLogout={logout}
-        collapsed={collapsed}
-        setCollapsed={setCollapsed}
+        collapsed={false}
+        setCollapsed={() => {}}
         user={resellerInfo}
       />
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0 }}>
-        <ResellerTopbar page={currentPage} onToggle={() => setCollapsed(c => !c)} user={resellerInfo} />
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
+        <ResellerTopbar page={currentPage} onToggle={() => {}} user={resellerInfo} />
         <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>{children}</main>
       </div>
     </div>
@@ -183,7 +181,8 @@ const ResellerLayout = ({ children, resellerInfo }: { children: ReactNode; resel
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN DASHBOARD PAGE (connected)
+//  ADMIN DASHBOARD (connected)
+//  ✅ เพิ่มคอลัมน์ "ชื่อร้าน" ระหว่างเลขออเดอร์และลูกค้า
 // ════════════════════════════════════════════════════════════
 const AdminDashboardConnected = () => {
   const [dashboard, setDashboard] = useState<AdminDashboardData | null>(null);
@@ -203,13 +202,13 @@ const AdminDashboardConnected = () => {
   if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
 
   const mappedOrders = orders.map(o => ({
-    id: o.orderNumber, resellerId: 0, resellerName: "", shopName: "",
-    customer: o.customerName, phone: o.customerPhone, address: o.shippingAddress,
-    product: "", productId: 0, items: [],
-    qty: 0, salePrice: 0,
+    id: o.orderNumber,
+    shopName: o.shopName ?? `Shop #${o.shopId}`,
+    customer: o.customerName,
     totalSale:   Number(o.totalAmount)    ?? 0,
     totalProfit: Number(o.resellerProfit) ?? 0,
-    cost: 0, date: o.createdAt, status: o.status as any,
+    date: o.createdAt,
+    status: o.status,
   }));
 
   return (
@@ -239,28 +238,32 @@ const AdminDashboardConnected = () => {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#1c2128" }}>
-                {["เลขออเดอร์","ลูกค้า","ยอดขาย","กำไร","สถานะ"].map(h => (
+                {["เลขออเดอร์","ชื่อร้าน","ลูกค้า","ยอดขาย","กำไร","สถานะ"].map(h => (
                   <th key={h} style={{ padding: "11px 16px", textAlign: "left", color: "#7d8590", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {[...mappedOrders].sort((a,b) => new Date(b.date).getTime()-new Date(a.date).getTime()).slice(0,5).map(o => {
-                const isDone = ["shipped","completed"].includes(o.status);
-                return (
-                  <tr key={o.id} style={{ borderTop: "1px solid #21262d" }}>
-                    <td style={{ padding: "13px 16px", color: "#58a6ff", fontWeight: 600, fontSize: 12 }}>{o.id}</td>
-                    <td style={{ padding: "13px 16px", color: "#e6edf3", fontSize: 13 }}>{o.customer}</td>
-                    <td style={{ padding: "13px 16px", color: "#3fb950", fontWeight: 700, fontSize: 13 }}>฿{Number(o.totalSale).toLocaleString()}</td>
-                    <td style={{ padding: "13px 16px", color: isDone ? "#f0883e" : "#484f58", fontWeight: isDone ? 700 : 400, fontSize: 13 }}>{isDone ? `฿${Number(o.totalProfit).toLocaleString()}` : "—"}</td>
-                    <td style={{ padding: "13px 16px" }}>
-                      <span style={{ background: o.status==="pending" ? "rgba(210,153,34,.15)" : o.status==="shipped" ? "rgba(88,166,255,.12)" : "rgba(188,140,255,.12)", color: o.status==="pending" ? "#d29922" : o.status==="shipped" ? "#58a6ff" : "#bc8cff", border: `1px solid ${o.status==="pending" ? "rgba(210,153,34,.4)" : o.status==="shipped" ? "rgba(88,166,255,.35)" : "rgba(188,140,255,.35)"}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>
-                        {o.status==="pending" ? "รออนุมัติ" : o.status==="shipped" ? "จัดส่งแล้ว" : "เสร็จสมบูรณ์"}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {[...mappedOrders]
+                .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                .slice(0, 5)
+                .map(o => {
+                  const isDone = ["shipped","completed"].includes(o.status);
+                  return (
+                    <tr key={o.id} style={{ borderTop: "1px solid #21262d" }}>
+                      <td style={{ padding: "13px 16px", color: "#58a6ff", fontWeight: 600, fontSize: 12 }}>{o.id}</td>
+                      <td style={{ padding: "13px 16px", color: "#e6edf3", fontSize: 13, fontWeight: 600 }}>{o.shopName || "—"}</td>
+                      <td style={{ padding: "13px 16px", color: "#e6edf3", fontSize: 13 }}>{o.customer}</td>
+                      <td style={{ padding: "13px 16px", color: "#3fb950", fontWeight: 700, fontSize: 13 }}>฿{Number(o.totalSale).toLocaleString()}</td>
+                      <td style={{ padding: "13px 16px", color: isDone ? "#f0883e" : "#484f58", fontWeight: isDone ? 700 : 400, fontSize: 13 }}>{isDone ? `฿${Number(o.totalProfit).toLocaleString()}` : "—"}</td>
+                      <td style={{ padding: "13px 16px" }}>
+                        <span style={{ background: o.status==="pending" ? "rgba(210,153,34,.15)" : o.status==="shipped" ? "rgba(88,166,255,.12)" : "rgba(188,140,255,.12)", color: o.status==="pending" ? "#d29922" : o.status==="shipped" ? "#58a6ff" : "#bc8cff", border: `1px solid ${o.status==="pending" ? "rgba(210,153,34,.4)" : o.status==="shipped" ? "rgba(88,166,255,.35)" : "rgba(188,140,255,.35)"}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>
+                          {o.status==="pending" ? "รออนุมัติ" : o.status==="shipped" ? "จัดส่งแล้ว" : "เสร็จสมบูรณ์"}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -270,7 +273,7 @@ const AdminDashboardConnected = () => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN PRODUCTS PAGE (connected) — ✅ แก้ handleSetProducts
+//  ADMIN PRODUCTS (connected)
 // ════════════════════════════════════════════════════════════
 const AdminProductsConnected = () => {
   const navigate  = useNavigate();
@@ -305,34 +308,25 @@ const AdminProductsConnected = () => {
     cost: 0, date: o.createdAt, status: o.status as any,
   }));
 
-  // ✅ แก้: เรียก deleteProduct API จริงๆ แล้วค่อย reload — ไม่อัปเดต UI ก่อน API เสร็จ
   const handleSetProducts = (updater: any) => {
     const prev = mappedProducts;
     const next = typeof updater === "function" ? updater(prev) : updater;
-
     if (next.length < prev.length) {
       const deleted = prev.find((p: any) => !next.find((n: any) => n.id === p.id));
       if (deleted) {
-        deleteProduct(deleted.id)
-          .then(() => load())
-          .catch(e => alert("ลบไม่ได้: " + e.message));
+        deleteProduct(deleted.id).then(() => load()).catch(e => alert("ลบไม่ได้: " + e.message));
       }
     } else {
       load();
     }
   };
 
-  return (
-    <AdminProducts
-      products={mappedProducts}
-      setProducts={handleSetProducts as any}
-      orders={mappedOrders}
-    />
-  );
+  return <AdminProducts products={mappedProducts} setProducts={handleSetProducts as any} orders={mappedOrders} />;
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN RESELLERS PAGE (connected)
+//  ADMIN RESELLERS (connected)
+//  ✅ shopName จาก API, createdAt จริง, เรียงล่าสุดขึ้นบน
 // ════════════════════════════════════════════════════════════
 const AdminResellersConnected = () => {
   const [resellers, setResellersState] = useState<ResellerAPI[]>([]);
@@ -352,42 +346,38 @@ const AdminResellersConnected = () => {
   if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
   if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
 
-  const mapped = resellers.map(r => ({
+  // เรียงจากใหม่ → เก่า (id มากสุดขึ้นบน = สมัครล่าสุด)
+  const sorted = [...resellers].sort((a, b) => b.id - a.id);
+
+  const mapped = sorted.map(r => ({
     id: r.id, name: r.name, email: r.email, phone: r.phone,
-    shopName: "", shopSlug: "", address: r.address,
+    shopName: (r as any).shopName ?? "", shopSlug: "", address: r.address,
     status: r.status as any, password: "",
+    createdAt: r.createdAt ?? "",
   }));
 
   const handleSetResellers = (updater: any) => {
     const prev = mapped;
     const next = typeof updater === "function" ? updater(prev) : updater;
-
     next.forEach((n: any) => {
       const old = prev.find(p => p.id === n.id);
       if (!old || old.status === n.status) return;
-      if (n.status === "approved") {
-        approveReseller(n.id).then(load).catch(e => alert(e.message));
-      } else if (n.status === "rejected") {
-        rejectReseller(n.id).then(load).catch(e => alert(e.message));
-      }
+      if (n.status === "approved") approveReseller(n.id).then(load).catch(e => alert(e.message));
+      else if (n.status === "rejected") rejectReseller(n.id).then(load).catch(e => alert(e.message));
     });
-
     setResellersState(next.map((n: any) => ({
       id: n.id, name: n.name, email: n.email, phone: n.phone,
       role: "reseller", status: n.status, address: n.address,
+      shopName: n.shopName ?? "", createdAt: n.createdAt ?? "",
     })));
   };
 
-  return (
-    <AdminResellers
-      resellers={mapped}
-      setResellers={handleSetResellers as any}
-    />
-  );
+  return <AdminResellers resellers={mapped} setResellers={handleSetResellers as any} />;
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN ORDERS PAGE (connected)
+//  ADMIN ORDERS (connected)
+//  ✅ shopName, ส่งไป OrdersPage ที่มี pagination + sort
 // ════════════════════════════════════════════════════════════
 const AdminOrdersConnected = () => {
   const [orders,  setOrdersState] = useState<OrderAPI[]>([]);
@@ -408,7 +398,7 @@ const AdminOrdersConnected = () => {
   if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
 
   const mapped = orders.map(o => ({
-    id: o.orderNumber, resellerId: 0, resellerName: "", shopName: "",
+    id: o.orderNumber, resellerId: 0, resellerName: "", shopName: o.shopName ?? `Shop #${o.shopId}`,
     customer: o.customerName, phone: o.customerPhone, address: o.shippingAddress,
     product: "", productId: 0, items: [],
     qty: 0, salePrice: 0, totalSale: o.totalAmount, totalProfit: o.resellerProfit,
@@ -419,123 +409,28 @@ const AdminOrdersConnected = () => {
   const handleSetOrders = (updater: any) => {
     const prev = mapped;
     const next = typeof updater === "function" ? updater(prev) : updater;
-
     next.forEach((n: any) => {
       const old = prev.find(p => p.id === n.id);
       if (!old || old.status === n.status) return;
-
       const backendId = orders.find(o => o.orderNumber === n.id)?.id;
       if (!backendId) return;
-
-      // pending → shipped (BR-10)
-      if (n.status === "shipped") {
-        shipOrder(backendId).then(load).catch(e => alert(e.message));
-      }
-      // shipped → completed
-      if (n.status === "completed") {
-        completeOrder(backendId).then(load).catch(e => alert(e.message));
-      }
+      if (n.status === "shipped")   shipOrder(backendId).then(load).catch(e => alert(e.message));
+      if (n.status === "completed") completeOrder(backendId).then(load).catch(e => alert(e.message));
     });
-
     setOrdersState(next.map((n: any) => ({
       id: orders.find(o => o.orderNumber === n.id)?.id ?? 0,
-      orderNumber: n.id,
-      shopId: 0,
-      customerName: n.customer,
-      customerPhone: n.phone,
-      shippingAddress: n.address,
-      totalAmount: n.totalSale,
-      resellerProfit: n.totalProfit,
-      status: n.status,
-      createdAt: n.date,
+      orderNumber: n.id, shopId: 0,
+      customerName: n.customer, customerPhone: n.phone, shippingAddress: n.address,
+      totalAmount: n.totalSale, resellerProfit: n.totalProfit,
+      status: n.status, createdAt: n.date,
     })));
   };
 
-  return (
-    <AdminOrders
-      orders={mapped as any}
-      setOrders={handleSetOrders as any}
-    />
-  );
+  return <AdminOrders orders={mapped as any} setOrders={handleSetOrders as any} />;
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN LOGIN PAGE
-// ════════════════════════════════════════════════════════════
-const AdminLoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => {
-  const navigate = useNavigate();
-  const [email,   setEmail]   = useState("");
-  const [pass,    setPass]    = useState("");
-  const [loading, setLoading] = useState(false);
-  const [showPw,  setShowPw]  = useState(false);
-  const [error,   setError]   = useState("");
-
-  const submit = async () => {
-    setError("");
-    if (!email || !pass) { setError("กรุณากรอกอีเมลและรหัสผ่าน"); return; }
-    setLoading(true);
-    try {
-      await adminLogin({ email, password: pass });
-      setSession({ email, role: "admin" });
-      navigate("/admin/dashboard");
-    } catch (err: any) {
-      setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <div style={{ position: "fixed", inset: 0, backgroundImage: "linear-gradient(rgba(88,166,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(88,166,255,.04) 1px,transparent 1px)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
-      <div style={{ width: 400, position: "relative", zIndex: 1 }}>
-        <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, boxShadow: "0 24px 64px rgba(0,0,0,.5)", overflow: "hidden" }}>
-          <div style={{ height: 3, background: `linear-gradient(90deg,${T.accent},#bc8cff,transparent)` }} />
-          <div style={{ padding: "32px 32px 28px" }}>
-            <div style={{ textAlign: "center", marginBottom: 28 }}>
-              <div style={{ fontSize: 40, marginBottom: 10 }}>🛡️</div>
-              <h1 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: "0 0 4px", ...F }}>Admin — เข้าสู่ระบบ</h1>
-              <p style={{ color: T.muted, fontSize: 13, margin: 0, ...F }}>URL: <span style={{ color: T.accent }}>/admin/login</span></p>
-            </div>
-
-            {error && <Alert type="error" message={error} onClose={() => setError("")} />}
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={{ display: "block", color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6, ...F }}>Email</label>
-              <input type="email" value={email} onChange={e => setEmail(e.target.value)}
-                onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && submit()}
-                placeholder="admin@rms.com"
-                style={{ width: "100%", padding: "10px 13px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 14, ...F, boxSizing: "border-box", outline: "none" }} />
-            </div>
-
-            <div style={{ marginBottom: 20 }}>
-              <label style={{ display: "block", color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".06em", marginBottom: 6, ...F }}>Password</label>
-              <div style={{ position: "relative" }}>
-                <input type={showPw ? "text" : "password"} value={pass} onChange={e => setPass(e.target.value)}
-                  onKeyDown={(e: KeyboardEvent<HTMLInputElement>) => e.key === "Enter" && submit()}
-                  placeholder="••••••••"
-                  style={{ width: "100%", padding: "10px 40px 10px 13px", background: T.bg, border: `1px solid ${T.border}`, borderRadius: 8, color: T.text, fontSize: 14, ...F, boxSizing: "border-box", outline: "none" }} />
-                <button onClick={() => setShowPw(s => !s)}
-                  style={{ position: "absolute", right: 12, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 14, padding: 0 }}>
-                  {showPw ? "🙈" : "👁"}
-                </button>
-              </div>
-            </div>
-
-            <button onClick={submit} disabled={loading}
-              style={{ width: "100%", padding: 11, background: loading ? "rgba(88,166,255,.3)" : T.accent, border: "none", borderRadius: 9, color: loading ? T.muted : "#0d1117", fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", ...F }}>
-              {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ →"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ════════════════════════════════════════════════════════════
-//  RESELLER LOGIN PAGE
+//  UNIFIED LOGIN PAGE (Admin + Reseller)
 // ════════════════════════════════════════════════════════════
 const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => {
   const navigate = useNavigate();
@@ -551,6 +446,16 @@ const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => 
     if (!email || !pass) { setError("กรุณากรอกอีเมลและรหัสผ่าน"); return; }
     setLoading(true);
     try {
+      // ลอง Admin ก่อน
+      try {
+        await adminLogin({ email, password: pass });
+        setSession({ email, role: "admin" });
+        navigate("/admin/dashboard");
+        return;
+      } catch {
+        // ไม่ใช่ admin → ลอง reseller
+      }
+      // ลอง Reseller
       const result = await resellerLogin({ email, password: pass });
       if (result.includes("รออนุมัติ")) {
         setStatusMsg({ type: "warning", msg: "บัญชีรออนุมัติ — กรุณารอการติดต่อจาก Admin (BR-16)" });
@@ -578,12 +483,12 @@ const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => 
       <div style={{ position: "fixed", inset: 0, backgroundImage: "linear-gradient(rgba(88,166,255,.04) 1px,transparent 1px),linear-gradient(90deg,rgba(88,166,255,.04) 1px,transparent 1px)", backgroundSize: "40px 40px", pointerEvents: "none" }} />
       <div style={{ width: 400, position: "relative", zIndex: 1 }}>
         <div style={{ background: T.surface, borderRadius: 14, border: `1px solid ${T.border}`, boxShadow: "0 24px 64px rgba(0,0,0,.5)", overflow: "hidden" }}>
-          <div style={{ height: 3, background: `linear-gradient(90deg,#bc8cff,${T.accent},transparent)` }} />
+          <div style={{ height: 3, background: `linear-gradient(90deg,${T.accent},#bc8cff,transparent)` }} />
           <div style={{ padding: "32px 32px 28px" }}>
             <div style={{ textAlign: "center", marginBottom: 28 }}>
-              <div style={{ fontSize: 40, marginBottom: 10 }}>🏪</div>
-              <h1 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: "0 0 4px", ...F }}>Reseller — เข้าสู่ระบบ</h1>
-              <p style={{ color: T.muted, fontSize: 13, margin: 0, ...F }}>URL: <span style={{ color: T.accent }}>/login</span></p>
+              <div style={{ fontSize: 40, marginBottom: 10 }}>🔐</div>
+              <h1 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: "0 0 4px", ...F }}>เข้าสู่ระบบ</h1>
+              <p style={{ color: T.muted, fontSize: 13, margin: 0, ...F }}>ใช้ได้ทั้ง Admin และ Reseller</p>
             </div>
 
             {error     && <Alert type="error"          message={error}         onClose={() => setError("")} />}
@@ -612,7 +517,7 @@ const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => 
             </div>
 
             <button onClick={submit} disabled={loading}
-              style={{ width: "100%", padding: 11, background: loading ? "rgba(188,140,255,.3)" : "#bc8cff", border: "none", borderRadius: 9, color: loading ? T.muted : "#0d1117", fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", ...F }}>
+              style={{ width: "100%", padding: 11, background: loading ? "rgba(88,166,255,.3)" : T.accent, border: "none", borderRadius: 9, color: loading ? T.muted : "#0d1117", fontSize: 14, fontWeight: 700, cursor: loading ? "not-allowed" : "pointer", ...F }}>
               {loading ? "กำลังตรวจสอบ..." : "เข้าสู่ระบบ →"}
             </button>
           </div>
@@ -620,7 +525,7 @@ const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => 
 
         <p style={{ textAlign: "center", color: T.muted, fontSize: 13, marginTop: 14, ...F }}>
           สมัครเป็นตัวแทน?{" "}
-          <button onClick={() => navigate("/register")} style={{ background: "none", border: "none", color: "#bc8cff", cursor: "pointer", fontSize: 13, padding: 0, ...F }}>
+          <button onClick={() => navigate("/register")} style={{ background: "none", border: "none", color: T.accent, cursor: "pointer", fontSize: 13, padding: 0, ...F }}>
             สมัครสมาชิก
           </button>
         </p>
@@ -634,31 +539,17 @@ const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => 
 // ════════════════════════════════════════════════════════════
 const RegisterPageConnected = () => {
   const navigate = useNavigate();
-
   const handleRegister = async (u: any) => {
     try {
       await resellerRegister({
-        name:            u.name,
-        email:           u.email,
-        phone:           u.phone,
-        password:        u.password,
-        confirmPassword: u.password,
-        shopName:        u.shopName,
-        address:         u.address,
+        name: u.name, email: u.email, phone: u.phone,
+        password: u.password, confirmPassword: u.password,
+        shopName: u.shopName, address: u.address,
       });
       navigate("/register/success");
-    } catch (err: any) {
-      throw err;
-    }
+    } catch (err: any) { throw err; }
   };
-
-  return (
-    <RegisterPage
-      onRegister={handleRegister as any}
-      onGoLogin={() => navigate("/login")}
-      existingResellers={[]}
-    />
-  );
+  return <RegisterPage onRegister={handleRegister as any} onGoLogin={() => navigate("/login")} existingResellers={[]} />;
 };
 
 // ════════════════════════════════════════════════════════════
@@ -723,37 +614,34 @@ const ResellerDashboardConnected = ({ session }: { session: SessionUser }) => {
   }));
 
   const walletEntries = wallet?.logs.map(l => ({
-    id: l.id, orderId: String(l.orderId), shop: info.shopName,
+    id: l.id,
+    orderId: l.orderNumber ?? String(l.orderId),  // ← ใช้ orderNumber จริง
+    shop: "",   // ← ลบชื่อร้านออก
     profit: Number(l.amount), at: l.createdAt,
   })) ?? [];
 
-  const profitByOrderId = new Map<string, number>();
-  walletEntries.forEach(w => profitByOrderId.set(w.orderId, w.profit));
+  const profitByOrderNum = new Map<string, number>();
+  walletEntries.forEach(w => profitByOrderNum.set(w.orderId, w.profit));
 
   const mappedOrders = orders.map(o => {
-    const profit = profitByOrderId.get(String(o.orderId)) ?? 0;
+    const key    = o.orderNumber ?? String(o.orderId);
+    const profit = profitByOrderNum.get(key) ?? 0;
     return {
-      id: String(o.orderId), resellerId: info.id,
+      id: key,                                        // ← เลขออเดอร์จริง
+      resellerId: info.id,
       resellerName: info.name, shopName: info.shopName,
       customer: o.customerName, phone: "", address: "",
       product: o.productName ?? "", productId: 0,
       items: o.productName ? [{ productName: o.productName, qty: o.quantity ?? 0, sellingPrice: o.sellingPrice ?? 0, cost: 0 }] : [],
       qty: o.quantity ?? 0, salePrice: o.sellingPrice ?? 0,
-      totalSale:   (o.sellingPrice ?? 0) * (o.quantity ?? 0),
-      totalProfit: profit,
-      cost: 0,
-      date: new Date().toISOString(), status: o.status as any,
+      totalSale:   Number(o.totalAmount ?? 0),         // ← ยอดขายจริง
+      totalProfit: profit, cost: 0,
+      date: o.createdAt ?? new Date().toISOString(),   // ← วันที่จริง
+      status: o.status as any,
     };
   });
 
-  return (
-    <ResellerDashboard
-      user={info}
-      shopProducts={mappedShopProducts}
-      orders={mappedOrders}
-      walletEntries={walletEntries}
-    />
-  );
+  return <ResellerDashboard user={info} shopProducts={mappedShopProducts} orders={mappedOrders} walletEntries={walletEntries} />;
 };
 
 const CatalogPageConnected = ({ session }: { session: SessionUser }) => {
@@ -796,15 +684,7 @@ const CatalogPageConnected = ({ session }: { session: SessionUser }) => {
     load();
   };
 
-  return (
-    <CatalogPage
-      user={info}
-      products={products}
-      shopProducts={shopProducts}
-      onAddToShop={handleAddToShop}
-      onUpdatePrice={handleUpdatePrice}
-    />
-  );
+  return <CatalogPage user={info} products={products} shopProducts={shopProducts} onAddToShop={handleAddToShop} onUpdatePrice={handleUpdatePrice} />;
 };
 
 const MyProductsConnected = ({ session }: { session: SessionUser }) => {
@@ -841,8 +721,15 @@ const MyProductsConnected = ({ session }: { session: SessionUser }) => {
     load();
   };
 
-  const handleRemove = (_id: number) => {
-    alert("ยังไม่รองรับการลบสินค้าออกจากร้าน (ต้องเพิ่ม API ฝั่ง Backend)");
+  const handleRemove = async (id: number) => {
+    const sp = shopProducts.find(p => p.id === id);
+    if (!sp) return;
+    try {
+      await removeProductFromShop(info.id, sp.productId);
+      load();
+    } catch (err: any) {
+      alert("ลบไม่ได้: " + err.message);
+    }
   };
 
   return (
@@ -871,22 +758,27 @@ const ResellerOrdersConnected = ({ session }: { session: SessionUser }) => {
   if (infoLoading || loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
   if (!info) return <div style={{ color: T.red, padding: 40, textAlign: "center", ...F }}>❌ ไม่พบข้อมูล กรุณา Login ใหม่</div>;
 
-  const profitByOrderId = new Map<string, number>();
-  (wallet?.logs ?? []).forEach(l => profitByOrderId.set(String(l.orderId), Number(l.amount)));
+  const profitByOrderNum = new Map<string, number>();
+  (wallet?.logs ?? []).forEach(l => {
+    const key = l.orderNumber ?? String(l.orderId);
+    profitByOrderNum.set(key, Number(l.amount));
+  });
 
   const mappedOrders = orders.map(o => {
-    const profit = profitByOrderId.get(String(o.orderId)) ?? 0;
+    const key    = o.orderNumber ?? String(o.orderId);
+    const profit = profitByOrderNum.get(key) ?? 0;
     return {
-      id: String(o.orderId), resellerId: info.id,
+      id: key,                                          // ← เลขออเดอร์จริง
+      resellerId: info.id,
       resellerName: info.name, shopName: info.shopName,
       customer: o.customerName, phone: "", address: "",
       product: o.productName ?? "", productId: 0,
       items: o.productName ? [{ productName: o.productName, qty: o.quantity ?? 0, sellingPrice: o.sellingPrice ?? 0, cost: 0 }] : [],
       qty: o.quantity ?? 0, salePrice: o.sellingPrice ?? 0,
-      totalSale:   (o.sellingPrice ?? 0) * (o.quantity ?? 0),
-      totalProfit: profit,
-      cost: 0,
-      date: new Date().toISOString(), status: o.status as any,
+      totalSale:   Number(o.totalAmount ?? 0),           // ← ยอดขายจริง
+      totalProfit: profit, cost: 0,
+      date: o.createdAt ?? new Date().toISOString(),     // ← วันที่จริง
+      status: o.status as any,
     };
   });
 
@@ -900,16 +792,15 @@ const WalletPageConnected = ({ session }: { session: SessionUser }) => {
 
   useEffect(() => {
     if (!info?.id) return;
-    fetchWallet(info.id)
-      .then(setWallet)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    fetchWallet(info.id).then(setWallet).catch(() => {}).finally(() => setLoading(false));
   }, [info?.id]);
 
   if (infoLoading || loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
 
   const walletEntries = wallet?.logs.map(l => ({
-    id: l.id, orderId: String(l.orderId), shop: info?.shopName ?? "",
+    id: l.id,
+    orderId: l.orderNumber ?? String(l.orderId),  // ← เลขออเดอร์จริง
+    shop: "",                                       // ← ลบชื่อร้านออก
     profit: l.amount, at: l.createdAt,
   })) ?? [];
 
@@ -927,26 +818,13 @@ const ShopPageConnected = () => {
 
   useEffect(() => {
     if (!slug) return;
-    fetchShopProducts(slug)
-      .then(setProducts)
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
+    fetchShopProducts(slug).then(setProducts).catch(() => setNotFound(true)).finally(() => setLoading(false));
   }, [slug]);
 
   if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
 
-  const fakeReseller = notFound ? [] : [{
-    id: 0, name: "", email: "", phone: "",
-    shopName: slug ?? "", shopSlug: slug ?? "", address: "",
-    status: "approved" as any, password: "",
-  }];
-
-  const fakeShopProducts = products.map(p => ({
-    id: p.product_id, productId: p.product_id, shopId: 0,
-    name: p.product_name, imagePreview: p.image,
-    description: "", cost: 0, minPrice: 0,
-    stock: p.stock, sellingPrice: p.price,
-  }));
+  const fakeReseller = notFound ? [] : [{ id: 0, name: "", email: "", phone: "", shopName: slug ?? "", shopSlug: slug ?? "", address: "", status: "approved" as any, password: "" }];
+  const fakeShopProducts = products.map(p => ({ id: p.product_id, productId: p.product_id, shopId: 0, name: p.product_name, imagePreview: p.image, description: "", cost: 0, minPrice: 0, stock: p.stock, sellingPrice: p.price }));
 
   return <ShopPage resellers={fakeReseller} shopProducts={fakeShopProducts} />;
 };
@@ -955,11 +833,10 @@ const ShopPageConnected = () => {
 //  CHECKOUT PAGE (connected)
 // ════════════════════════════════════════════════════════════
 const CheckoutPageConnected = () => {
-  const { slug }           = useParams<{ slug: string }>();
-  const [searchParams]     = useSearchParams();
-  const nav                = useNavigate();
-  const productId          = Number(searchParams.get("productId"));
-
+  const { slug }       = useParams<{ slug: string }>();
+  const [searchParams] = useSearchParams();
+  const nav            = useNavigate();
+  const productId      = Number(searchParams.get("productId"));
   const [products, setProducts] = useState<ShopProductAPI[]>([]);
   const [shopId,   setShopId]   = useState<number>(0);
   const [loading,  setLoading]  = useState(true);
@@ -968,93 +845,54 @@ const CheckoutPageConnected = () => {
     if (!slug) return;
     Promise.all([
       fetchShopProducts(slug),
-      fetch(`http://localhost:8080/shop/info/${slug}`, { credentials: "include" })
-        .then(r => r.ok ? r.json() : null),
+      fetch(`http://localhost:8080/shop/info/${slug}`, { credentials: "include" }).then(r => r.ok ? r.json() : null),
     ])
-      .then(([prods, info]) => {
-        setProducts(prods);
-        if (info?.id) setShopId(info.id);
-      })
+      .then(([prods, info]) => { setProducts(prods); if (info?.id) setShopId(info.id); })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [slug]);
 
   if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
 
-  const fakeReseller = [{
-    id: 0, name: "", email: "", phone: "",
-    shopName: slug ?? "", shopSlug: slug ?? "", address: "",
-    status: "approved" as any, password: "",
-  }];
-
-  const fakeShopProducts = products.map(p => ({
-    id: p.product_id, productId: p.product_id, shopId: 0,
-    name: p.product_name, imagePreview: p.image,
-    description: "", cost: 0, minPrice: 0,
-    stock: p.stock, sellingPrice: p.price,
-  }));
+  const fakeReseller = [{ id: 0, name: "", email: "", phone: "", shopName: slug ?? "", shopSlug: slug ?? "", address: "", status: "approved" as any, password: "" }];
+  const fakeShopProducts = products.map(p => ({ id: p.product_id, productId: p.product_id, shopId: 0, name: p.product_name, imagePreview: p.image, description: "", cost: 0, minPrice: 0, stock: p.stock, sellingPrice: p.price }));
 
   const handlePlaceOrder = async (order: any) => {
     try {
       const orderNumber = await createOrder({
-        shop_id:          shopId,
-        customer_name:    order.customer,
-        customer_phone:   order.phone,
-        shipping_address: order.address,
-        items: order.items.map((i: any) => ({
-          product_id: i.productId ?? productId,
-          quantity:   i.qty,
-        })),
+        shop_id: shopId, customer_name: order.customer,
+        customer_phone: order.phone, shipping_address: order.address,
+        items: order.items.map((i: any) => ({ product_id: i.productId ?? productId, quantity: i.qty })),
       });
       nav(`/shop/${slug}/payment/${orderNumber}`);
-    } catch (err: any) {
-      alert("เกิดข้อผิดพลาด: " + err.message);
-    }
+    } catch (err: any) { alert("เกิดข้อผิดพลาด: " + err.message); }
   };
 
-  return (
-    <CheckoutPage
-      resellers={fakeReseller}
-      shopProducts={fakeShopProducts}
-      onPlaceOrder={handlePlaceOrder as any}
-    />
-  );
+  return <CheckoutPage resellers={fakeReseller} shopProducts={fakeShopProducts} onPlaceOrder={handlePlaceOrder as any} />;
 };
 
 // ════════════════════════════════════════════════════════════
 //  TRACK ORDER PAGE (connected)
 // ════════════════════════════════════════════════════════════
 const TrackOrderPageConnected = () => {
-  const [searchParams]              = useSearchParams();
-  const [orderData, setOrderData]   = useState<TrackOrderAPI | null>(null);
-  const [notFound,  setNotFound]    = useState(false);
-  const [loading,   setLoading]     = useState(false);
-
+  const [searchParams]            = useSearchParams();
+  const [orderData, setOrderData] = useState<TrackOrderAPI | null>(null);
+  const [loading,   setLoading]   = useState(false);
   const orderNumber = searchParams.get("orderId");
 
   useEffect(() => {
     if (!orderNumber) return;
     setLoading(true);
-    trackOrder(orderNumber)
-      .then(setOrderData)
-      .catch(() => setNotFound(true))
-      .finally(() => setLoading(false));
+    trackOrder(orderNumber).then(setOrderData).catch(() => {}).finally(() => setLoading(false));
   }, [orderNumber]);
 
   const fakeOrders = orderData ? [{
-    id: orderData.orderNumber,
-    resellerId: 0, resellerName: "", shopName: "",
-    customer: orderData.customerName,
-    phone: orderData.customerPhone,
-    address: orderData.shippingAddress,
+    id: orderData.orderNumber, resellerId: 0, resellerName: "", shopName: "",
+    customer: orderData.customerName, phone: orderData.customerPhone, address: orderData.shippingAddress,
     product: orderData.items[0]?.productName ?? "", productId: 0,
-    items: orderData.items.map(i => ({
-      productName: i.productName, qty: i.quantity,
-      sellingPrice: i.sellingPrice, cost: 0,
-    })),
+    items: orderData.items.map(i => ({ productName: i.productName, qty: i.quantity, sellingPrice: i.sellingPrice, cost: 0 })),
     qty: orderData.items.reduce((s, i) => s + i.quantity, 0),
-    salePrice: 0, totalSale: orderData.totalAmount,
-    totalProfit: 0, cost: 0,
+    salePrice: 0, totalSale: orderData.totalAmount, totalProfit: 0, cost: 0,
     date: orderData.createdAt, status: orderData.status as any,
   }] : [];
 
@@ -1067,11 +905,11 @@ const TrackOrderPageConnected = () => {
 const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
   const navigate  = useNavigate();
   const { id }    = useParams<{ id: string }>();
-  const [product, setProduct]   = useState<ProductAPI | null>(null);
-  const [orders,  setOrders]    = useState<OrderAPI[]>([]);
-  const [loading, setLoading]   = useState(mode === "edit");
-  const [saving,  setSaving]    = useState(false);
-  const [error,   setError]     = useState("");
+  const [product, setProduct] = useState<ProductAPI | null>(null);
+  const [orders,  setOrders]  = useState<OrderAPI[]>([]);
+  const [loading, setLoading] = useState(mode === "edit");
+  const [saving,  setSaving]  = useState(false);
+  const [error,   setError]   = useState("");
 
   useEffect(() => {
     if (mode === "edit" && id) {
@@ -1079,8 +917,7 @@ const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
         .then(([prods, ords]) => {
           const found = prods.find(p => p.id === Number(id));
           if (!found) { setError("ไม่พบสินค้านี้"); return; }
-          setProduct(found);
-          setOrders(ords);
+          setProduct(found); setOrders(ords);
         })
         .catch(e => setError(e.message))
         .finally(() => setLoading(false));
@@ -1094,8 +931,7 @@ const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
 
   const mappedProduct = product ? {
     id: product.id, name: product.name, imagePreview: product.imageUrl ?? null,
-    description: product.description ?? "", cost: product.costPrice,
-    minPrice: product.minPrice, stock: product.stock,
+    description: product.description ?? "", cost: product.costPrice, minPrice: product.minPrice, stock: product.stock,
   } : null;
 
   const mappedOrders = orders.map(o => ({
@@ -1106,25 +942,15 @@ const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
     cost: 0, date: o.createdAt, status: o.status as any,
   }));
 
-  const handleSave = async (data: Omit<any, "id">) => {
+  const handleSave = async (data: any) => {
     setSaving(true);
     try {
-      const payload = {
-        name: data.name, description: data.description,
-        imageUrl: data.imagePreview ?? null,
-        costPrice: data.cost, minPrice: data.minPrice, stock: data.stock,
-      };
-      if (mode === "edit" && id) {
-        await updateProduct(Number(id), payload);
-      } else {
-        await createProduct(payload);
-      }
+      const payload = { name: data.name, description: data.description, imageUrl: data.imagePreview ?? null, costPrice: data.cost, minPrice: data.minPrice, stock: data.stock };
+      if (mode === "edit" && id) await updateProduct(Number(id), payload);
+      else await createProduct(payload);
       navigate("/admin/products");
-    } catch (err: any) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
+    } catch (err: any) { setError(err.message); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -1135,51 +961,32 @@ const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
           ← กลับ
         </button>
         <div>
-          <h2 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: 0, ...F }}>
-            {mode === "add" ? "เพิ่มสินค้าใหม่" : "แก้ไขสินค้า"}
-          </h2>
-          <p style={{ color: T.muted, fontSize: 12, margin: "2px 0 0", ...F }}>
-            URL: {mode === "add" ? "/admin/products/add" : `/admin/products/edit/${id}`}
-          </p>
+          <h2 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: 0, ...F }}>{mode === "add" ? "เพิ่มสินค้าใหม่" : "แก้ไขสินค้า"}</h2>
+          <p style={{ color: T.muted, fontSize: 12, margin: "2px 0 0", ...F }}>URL: {mode === "add" ? "/admin/products/add" : `/admin/products/edit/${id}`}</p>
         </div>
       </div>
-
       {error && <div style={{ color: T.red, marginBottom: 16, ...F }}>❌ {error}</div>}
-
       <div style={{ maxWidth: 560 }}>
-        <ProductFormModalInline
-          product={mappedProduct}
-          orders={mappedOrders}
-          onSave={handleSave}
-          saving={saving}
-        />
+        <ProductFormModalInline product={mappedProduct} orders={mappedOrders} onSave={handleSave} saving={saving} />
       </div>
     </div>
   );
 };
 
-const ProductFormModalInline = ({
-  product, orders, onSave, saving,
-}: {
-  product: any; orders: any[]; onSave: (d: any) => void; saving: boolean;
-}) => {
+const ProductFormModalInline = ({ product, orders, onSave, saving }: { product: any; orders: any[]; onSave: (d: any) => void; saving: boolean }) => {
   const [form, setForm] = useState({
-    name:         product?.name         ?? "",
-    imagePreview: product?.imagePreview ?? null as string | null,
-    description:  product?.description  ?? "",
-    cost:         product?.cost         ?? "",
-    minPrice:     product?.minPrice     ?? "",
-    stock:        product?.stock        ?? "",
+    name: product?.name ?? "", imagePreview: product?.imagePreview ?? null as string | null,
+    description: product?.description ?? "", cost: product?.cost ?? "",
+    minPrice: product?.minPrice ?? "", stock: product?.stock ?? "",
   });
   const [errors, setErrors] = useState<Record<string, string>>({});
-
   const set = (k: string, v: any) => setForm(f => ({ ...f, [k]: v }));
 
   const handleImg = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     if (!["image/jpeg", "image/png"].includes(file.type)) { setErrors(er => ({ ...er, image: "ไฟล์ต้องเป็น JPG หรือ PNG" })); return; }
-    if (file.size > 5 * 1024 * 1024)                      { setErrors(er => ({ ...er, image: "ขนาดไม่เกิน 5MB" })); return; }
+    if (file.size > 5 * 1024 * 1024) { setErrors(er => ({ ...er, image: "ขนาดไม่เกิน 5MB" })); return; }
     const reader = new FileReader();
     reader.onload = ev => set("imagePreview", ev.target?.result as string);
     reader.readAsDataURL(file);
@@ -1188,10 +995,10 @@ const ProductFormModalInline = ({
 
   const validate = () => {
     const e: Record<string, string> = {};
-    if (!form.name.trim())              e.name     = "กรุณากรอกชื่อสินค้า";
-    if (!form.cost || +form.cost <= 0)  e.cost     = "ราคาทุนต้องมากกว่า 0";
-    if (!form.minPrice)                 e.minPrice = "กรุณากรอกราคาขั้นต่ำ";
-    if (+form.minPrice < +form.cost)    e.minPrice = "ราคาขั้นต่ำ < ราคาทุน ไม่ได้ (BR-07)";
+    if (!form.name.trim())             e.name     = "กรุณากรอกชื่อสินค้า";
+    if (!form.cost || +form.cost <= 0) e.cost     = "ราคาทุนต้องมากกว่า 0";
+    if (!form.minPrice)                e.minPrice = "กรุณากรอกราคาขั้นต่ำ";
+    if (+form.minPrice < +form.cost)   e.minPrice = "ราคาขั้นต่ำ < ราคาทุน ไม่ได้ (BR-07)";
     if (form.stock === "" || +form.stock < 0) e.stock = "สต็อกต้อง >= 0";
     return e;
   };
@@ -1215,13 +1022,10 @@ const ProductFormModalInline = ({
           <input value={form.name} onChange={e => set("name", e.target.value)} placeholder="เช่น เสื้อยืดคอกลม สีดำ" style={inp(errors.name ? { borderColor: T.red } : {})} />
           {errors.name && <p style={err}>{errors.name}</p>}
         </div>
-
         <div style={{ marginBottom: 16 }}>
           <label style={lbl}>รูปสินค้า (JPG/PNG ≤ 5MB)</label>
           <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-            {form.imagePreview && (
-              <img src={form.imagePreview} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: `1px solid ${T.border}`, flexShrink: 0 }} />
-            )}
+            {form.imagePreview && <img src={form.imagePreview} alt="" style={{ width: 64, height: 64, borderRadius: 8, objectFit: "cover", border: `1px solid ${T.border}`, flexShrink: 0 }} />}
             <label style={{ flex: 1, padding: "10px", background: T.bg, border: `1px dashed ${errors.image ? T.red : T.border}`, borderRadius: 8, color: T.muted, cursor: "pointer", fontSize: 13, textAlign: "center", ...F }}>
               {form.imagePreview ? "เปลี่ยนรูป" : "📁 คลิกเพื่ออัปโหลด"}
               <input type="file" accept="image/jpeg,image/png" onChange={handleImg} style={{ display: "none" }} />
@@ -1229,39 +1033,29 @@ const ProductFormModalInline = ({
           </div>
           {errors.image && <p style={err}>{errors.image}</p>}
         </div>
-
         <div style={{ marginBottom: 16 }}>
           <label style={lbl}>รายละเอียด</label>
-          <textarea value={form.description} onChange={e => set("description", e.target.value)} placeholder="ไม่บังคับ" rows={3}
-            style={{ ...inp(), resize: "vertical", minHeight: 70 }} />
+          <textarea value={form.description} onChange={e => set("description", e.target.value)} placeholder="ไม่บังคับ" rows={3} style={{ ...inp(), resize: "vertical", minHeight: 70 }} />
         </div>
-
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
           <div>
             <label style={lbl}>ราคาทุน (บาท) <span style={{ color: T.red }}>*</span></label>
-            <input type="number" value={form.cost} onChange={e => set("cost", e.target.value)} placeholder="0" min="0"
-              style={inp(errors.cost ? { borderColor: T.red } : {})} />
+            <input type="number" value={form.cost} onChange={e => set("cost", e.target.value)} placeholder="0" min="0" style={inp(errors.cost ? { borderColor: T.red } : {})} />
             {errors.cost && <p style={err}>{errors.cost}</p>}
           </div>
           <div>
             <label style={lbl}>ราคาขั้นต่ำ (บาท) <span style={{ color: T.red }}>*</span></label>
-            <input type="number" value={form.minPrice} onChange={e => set("minPrice", e.target.value)} placeholder="0" min="0"
-              style={inp(errors.minPrice ? { borderColor: T.red } : {})} />
+            <input type="number" value={form.minPrice} onChange={e => set("minPrice", e.target.value)} placeholder="0" min="0" style={inp(errors.minPrice ? { borderColor: T.red } : {})} />
             {errors.minPrice && <p style={err}>{errors.minPrice}</p>}
-            {+form.minPrice >= +form.cost && +form.cost > 0 && (
-              <p style={{ color: T.green, fontSize: 11, margin: "4px 0 0", ...F }}>กำไรขั้นต่ำ: ฿{(+form.minPrice - +form.cost).toLocaleString()}</p>
-            )}
+            {+form.minPrice >= +form.cost && +form.cost > 0 && <p style={{ color: T.green, fontSize: 11, margin: "4px 0 0", ...F }}>กำไรขั้นต่ำ: ฿{(+form.minPrice - +form.cost).toLocaleString()}</p>}
           </div>
         </div>
-
         <div>
           <label style={lbl}>จำนวนสต็อก <span style={{ color: T.red }}>*</span></label>
-          <input type="number" value={form.stock} onChange={e => set("stock", e.target.value)} placeholder="0" min="0"
-            style={inp(errors.stock ? { borderColor: T.red } : {})} />
+          <input type="number" value={form.stock} onChange={e => set("stock", e.target.value)} placeholder="0" min="0" style={inp(errors.stock ? { borderColor: T.red } : {})} />
           {errors.stock && <p style={err}>{errors.stock}</p>}
         </div>
       </div>
-
       <button onClick={handleSubmit} disabled={saving}
         style={{ width: "100%", padding: 12, background: saving ? "rgba(88,166,255,.3)" : T.accent, border: "none", borderRadius: 9, color: saving ? T.muted : "#0d1117", fontSize: 14, fontWeight: 700, cursor: saving ? "not-allowed" : "pointer", ...F }}>
         {saving ? "กำลังบันทึก..." : "💾 บันทึกสินค้า"}
@@ -1275,50 +1069,37 @@ const ProductFormModalInline = ({
 // ════════════════════════════════════════════════════════════
 const PaymentPageConnected = () => {
   const { slug, orderId } = useParams<{ slug: string; orderId: string }>();
-  const nav               = useNavigate();
+  const nav = useNavigate();
   const [orderData, setOrderData] = useState<TrackOrderAPI | null>(null);
   const [loading,   setLoading]   = useState(true);
 
   useEffect(() => {
     if (!orderId) return;
-    trackOrder(orderId)
-      .then(setOrderData)
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    trackOrder(orderId).then(setOrderData).catch(() => {}).finally(() => setLoading(false));
   }, [orderId]);
 
   if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
 
   const order = orderId ? [{
-    id:            orderId,
-    resellerId:    0,
-    resellerName:  "",
-    shopName:      slug ?? "",
-    customer:      orderData?.customerName    ?? "",
-    phone:         orderData?.customerPhone   ?? "",
-    address:       orderData?.shippingAddress ?? "",
-    product:       orderData?.items[0]?.productName ?? "",
-    productId:     0,
-    items: (orderData?.items ?? []).map(i => ({
-      productName:  i.productName,
-      qty:          i.quantity,
-      sellingPrice: i.sellingPrice,
-      cost:         0,
-    })),
-    qty:          orderData?.items.reduce((s, i) => s + i.quantity, 0) ?? 1,
-    salePrice:    orderData?.items[0]?.sellingPrice ?? 0,
-    totalSale:    orderData?.totalAmount    ?? 0,
-    totalProfit:  0,
-    cost:         0,
-    date:         orderData?.createdAt      ?? new Date().toISOString(),
-    status:       "pending" as any,
+    id: orderId, resellerId: 0, resellerName: "", shopName: slug ?? "",
+    customer: orderData?.customerName ?? "", phone: orderData?.customerPhone ?? "",
+    address: orderData?.shippingAddress ?? "", product: orderData?.items[0]?.productName ?? "", productId: 0,
+    items: (orderData?.items ?? []).map(i => ({ productName: i.productName, qty: i.quantity, sellingPrice: i.sellingPrice, cost: 0 })),
+    qty: orderData?.items.reduce((s, i) => s + i.quantity, 0) ?? 1,
+    salePrice: orderData?.items[0]?.sellingPrice ?? 0,
+    totalSale: orderData?.totalAmount ?? 0, totalProfit: 0, cost: 0,
+    date: orderData?.createdAt ?? new Date().toISOString(), status: "pending" as any,
   }] : [];
 
-  const handlePaymentSuccess = async (oid: string) => {
+  return <PaymentPage orders={order} onPaymentSuccess={async (oid) => {
+    // BR-28 + BR-29: เรียก payOrder → ตัด stock
+    try {
+      await payOrder(oid); // oid คือ orderNumber เช่น "ORD-xxx"
+    } catch (e) {
+      // ignore error — ยังคง navigate ไปหน้า track
+    }
     nav(`/track-order?orderId=${oid}`);
-  };
-
-  return <PaymentPage orders={order} onPaymentSuccess={handlePaymentSuccess} />;
+  }} />;
 };
 
 // ════════════════════════════════════════════════════════════
@@ -1328,27 +1109,22 @@ const SESSION_KEY = "rms_session";
 
 export default function App() {
   const [session, setSessionState] = useState<SessionUser | null>(() => {
-    try {
-      const saved = localStorage.getItem(SESSION_KEY);
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
+    try { const saved = localStorage.getItem(SESSION_KEY); return saved ? JSON.parse(saved) : null; }
+    catch { return null; }
   });
   const navigate = useNavigate();
 
   const setSession = (u: SessionUser | null) => {
     setSessionState(u);
-    if (u) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(u));
-    } else {
-      localStorage.removeItem(SESSION_KEY);
-    }
+    if (u) localStorage.setItem(SESSION_KEY, JSON.stringify(u));
+    else   localStorage.removeItem(SESSION_KEY);
   };
 
+  // ✅ logout → /login เสมอ
   const logout = async () => {
     try { await adminLogout(); } catch {}
-    const wasAdmin = session?.role === "admin";
     setSession(null);
-    navigate(wasAdmin ? "/admin/login" : "/login");
+    navigate("/login");
   };
 
   const resellerInfo = session?.role === "reseller" ? {
@@ -1365,8 +1141,10 @@ export default function App() {
           session?.role === "reseller" ? <Navigate to="/reseller/dashboard" replace /> :
                                          <Navigate to="/login"              replace />
         } />
-        <Route path="/login"       element={session?.role === "reseller" ? <Navigate to="/reseller/dashboard" replace /> : <LoginPage      setSession={setSession} />} />
-        <Route path="/admin/login" element={session?.role === "admin"    ? <Navigate to="/admin/dashboard"    replace /> : <AdminLoginPage setSession={setSession} />} />
+
+        {/* ✅ หน้า Login เดียว — ใช้ได้ทั้ง Admin และ Reseller */}
+        <Route path="/login"       element={session ? <Navigate to={session.role === "admin" ? "/admin/dashboard" : "/reseller/dashboard"} replace /> : <LoginPage setSession={setSession} />} />
+        <Route path="/admin/login" element={<Navigate to="/login" replace />} />
 
         <Route path="/register"         element={<RegisterPageConnected />} />
         <Route path="/register/success" element={<RegisterSuccessPage onGoLogin={() => navigate("/login")} />} />

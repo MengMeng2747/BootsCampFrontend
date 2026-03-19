@@ -14,6 +14,8 @@ import type { Order, OrderStatus, WalletEntry } from "../../types";
 
 type FilterId = "all" | OrderStatus;
 
+const PAGE_SIZE = 15;
+
 const STATUS_NEXT: Partial<Record<OrderStatus, OrderStatus>> = {
   pending: "shipped",
   shipped: "completed",
@@ -26,6 +28,7 @@ interface OrdersPageProps {
 
 export const OrdersPage: FC<OrdersPageProps> = ({ orders, setOrders }) => {
   const [filter,  setFilter]  = useState<FilterId>("all");
+  const [page,    setPage]    = useState(1);
   const [detail,  setDetail]  = useState<Order | null>(null);
   const [wallet,  setWallet]  = useState<WalletEntry[]>([]);
   const [toast, showToast]    = useToast();
@@ -51,8 +54,18 @@ export const OrdersPage: FC<OrdersPageProps> = ({ orders, setOrders }) => {
     { id: "completed", label: "เสร็จสมบูรณ์", count: orders.filter(o => o.status === "completed").length },
   ];
 
-  const rows = filter === "all" ? orders : orders.filter(o => o.status === filter);
-  const fmt  = (d: string) => new Date(d).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" });
+  // เรียงล่าสุด → เก่าสุด
+  const filtered = (filter === "all" ? orders : orders.filter(o => o.status === filter))
+    .slice()
+    .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage   = Math.min(page, totalPages);
+  const rows       = filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
+  const handleFilterChange = (f: FilterId) => { setFilter(f); setPage(1); };
+
+  const fmt = (d: string) => new Date(d).toLocaleDateString("th-TH", { day: "2-digit", month: "short", year: "numeric" });
 
   return (
     <div>
@@ -85,7 +98,7 @@ export const OrdersPage: FC<OrdersPageProps> = ({ orders, setOrders }) => {
         {tabs.map(t => {
           const active = filter === t.id;
           return (
-            <button key={t.id} onClick={() => setFilter(t.id as FilterId)}
+            <button key={t.id} onClick={() => handleFilterChange(t.id as FilterId)}
               style={{ padding: "7px 14px", borderRadius: 7, cursor: "pointer", fontSize: 13, ...F, fontWeight: active ? 700 : 400, border: "none", background: active ? T.accent : T.surface, color: active ? "#0d1117" : T.muted, outline: active ? "none" : `1px solid ${T.border}` }}>
               {t.label} <span style={{ opacity: .7, fontSize: 11, marginLeft: 4 }}>({t.count})</span>
             </button>
@@ -94,35 +107,65 @@ export const OrdersPage: FC<OrdersPageProps> = ({ orders, setOrders }) => {
       </div>
 
       {rows.length === 0 ? <EmptyState icon="🛒" message="ไม่มีออเดอร์" /> : (
-        <Table headers={["เลขออเดอร์","ร้านตัวแทน","ลูกค้า","สินค้า/จำนวน","ยอดขาย","กำไร","วันที่","สถานะ","จัดการ"]}>
-          {rows.map(o => {
-            const profit = o.totalSale - o.cost * o.qty;
-            const isDone = ["shipped","completed"].includes(o.status);
-            return (
-              <Tr key={o.id}>
-                <Td>
-                  <button onClick={() => setDetail(o)} style={{ background: "none", border: "none", color: T.accent, cursor: "pointer", fontWeight: 700, fontSize: 12, padding: 0, ...F, textDecoration: "underline" }}>
-                    {o.id}
+        <>
+          <Table headers={["เลขออเดอร์","ร้านตัวแทน","ลูกค้า","ยอดขาย","กำไร","วันที่","สถานะ","จัดการ"]}>
+            {rows.map(o => {
+              const profit = o.totalSale - o.cost * o.qty;
+              const isDone = ["shipped","completed"].includes(o.status);
+              return (
+                <Tr key={o.id}>
+                  <Td>
+                    <button onClick={() => setDetail(o)} style={{ background: "none", border: "none", color: T.accent, cursor: "pointer", fontWeight: 700, fontSize: 12, padding: 0, ...F, textDecoration: "underline" }}>
+                      {o.id}
+                    </button>
+                  </Td>
+                  <Td style={{ fontWeight: 600, color: T.text }}>{o.shopName || "—"}</Td>
+                  <Td style={{ color: T.muted }}>{o.customer}</Td>
+                  <Td style={{ color: T.green,  fontWeight: 700 }}>฿{o.totalSale.toLocaleString()}</Td>
+                  <Td style={{ color: isDone ? T.orange : T.dim, fontWeight: isDone ? 700 : 400 }}>
+                    {isDone ? `฿${profit.toLocaleString()}` : "—"}
+                  </Td>
+                  <Td style={{ color: T.dim, fontSize: 12 }}>{fmt(o.date)}</Td>
+                  <Td><StatusBadge status={o.status} /></Td>
+                  <Td>
+                    {o.status === "pending"   && <Btn variant="info"    size="sm" onClick={() => advance(o)}>📦 จัดส่งแล้ว</Btn>}
+                    {o.status === "shipped"   && <Btn variant="success" size="sm" onClick={() => advance(o)}>✓ เสร็จสมบูรณ์</Btn>}
+                    {o.status === "completed" && <span style={{ color: T.dim, fontSize: 12, ...F }}>เสร็จสิ้น</span>}
+                  </Td>
+                </Tr>
+              );
+            })}
+          </Table>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 18, flexWrap: "wrap", gap: 10 }}>
+              <span style={{ color: T.muted, fontSize: 12, ...F }}>
+                แสดง {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filtered.length)} จาก {filtered.length} รายการ
+              </span>
+              <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                <button
+                  onClick={() => setPage(p => Math.max(1, p - 1))}
+                  disabled={safePage === 1}
+                  style={{ padding: "6px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: safePage === 1 ? T.surface2 : T.surface, color: safePage === 1 ? T.dim : T.muted, cursor: safePage === 1 ? "not-allowed" : "pointer", fontSize: 13, ...F }}>
+                  ← ก่อนหน้า
+                </button>
+                {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                  <button key={p} onClick={() => setPage(p)}
+                    style={{ width: 34, height: 34, borderRadius: 7, border: "none", background: p === safePage ? T.accent : T.surface, color: p === safePage ? "#0d1117" : T.muted, cursor: "pointer", fontWeight: p === safePage ? 700 : 400, fontSize: 13, outline: p === safePage ? "none" : `1px solid ${T.border}` }}>
+                    {p}
                   </button>
-                </Td>
-                <Td style={{ fontWeight: 600 }}>{o.shopName}</Td>
-                <Td style={{ color: T.muted }}>{o.customer}</Td>
-                <Td style={{ color: T.muted }}>{o.product} ×{o.qty}</Td>
-                <Td style={{ color: T.green,  fontWeight: 700 }}>฿{o.totalSale.toLocaleString()}</Td>
-                <Td style={{ color: isDone ? T.orange : T.dim, fontWeight: isDone ? 700 : 400 }}>
-                  {isDone ? `฿${profit.toLocaleString()}` : "—"}
-                </Td>
-                <Td style={{ color: T.dim, fontSize: 12 }}>{fmt(o.date)}</Td>
-                <Td><StatusBadge status={o.status} /></Td>
-                <Td>
-                  {o.status === "pending"   && <Btn variant="info"    size="sm" onClick={() => advance(o)}>📦 จัดส่งแล้ว</Btn>}
-                  {o.status === "shipped"   && <Btn variant="success" size="sm" onClick={() => advance(o)}>✓ เสร็จสมบูรณ์</Btn>}
-                  {o.status === "completed" && <span style={{ color: T.dim, fontSize: 12, ...F }}>เสร็จสิ้น</span>}
-                </Td>
-              </Tr>
-            );
-          })}
-        </Table>
+                ))}
+                <button
+                  onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                  disabled={safePage === totalPages}
+                  style={{ padding: "6px 14px", borderRadius: 7, border: `1px solid ${T.border}`, background: safePage === totalPages ? T.surface2 : T.surface, color: safePage === totalPages ? T.dim : T.muted, cursor: safePage === totalPages ? "not-allowed" : "pointer", fontSize: 13, ...F }}>
+                  ถัดไป →
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {/* Detail Modal */}
@@ -131,7 +174,7 @@ export const OrdersPage: FC<OrdersPageProps> = ({ orders, setOrders }) => {
           <div>
             {([
               ["เลขออเดอร์",   detail.id],
-              ["ร้านตัวแทน",   detail.shopName],
+              ["ร้านตัวแทน",   detail.shopName || "—"],
               ["ลูกค้า",       detail.customer],
               ["สินค้า/จำนวน", `${detail.product} × ${detail.qty} ชิ้น`],
               ["ยอดรวม",       `฿${detail.totalSale.toLocaleString()} บาท`],
