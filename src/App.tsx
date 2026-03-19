@@ -21,7 +21,6 @@ import { OrdersPage     as ResellerOrders }    from "./pages/reseller/OrdersPage
 import { WalletPage }                          from "./pages/reseller/WalletPage";
 
 import { ShopPage }       from "./pages/customer/ShopPage";
-import { CheckoutPage }   from "./pages/customer/CheckoutPage";
 import { PaymentPage }    from "./pages/customer/PaymentPage";
 import { TrackOrderPage } from "./pages/customer/TrackOrderPage";
 
@@ -808,67 +807,71 @@ const WalletPageConnected = ({ session }: { session: SessionUser }) => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  SHOP PAGE (connected)
+//  SHOP PAGE (connected) — ระบบตะกร้าหลายสินค้า
 // ════════════════════════════════════════════════════════════
 const ShopPageConnected = () => {
   const { slug } = useParams<{ slug: string }>();
+  const nav      = useNavigate();
   const [products, setProducts] = useState<ShopProductAPI[]>([]);
+  const [shopId,   setShopId]   = useState<number>(0);
+  const [shopName, setShopName] = useState<string>("");
   const [loading,  setLoading]  = useState(true);
   const [notFound, setNotFound] = useState(false);
 
   useEffect(() => {
     if (!slug) return;
-    fetchShopProducts(slug).then(setProducts).catch(() => setNotFound(true)).finally(() => setLoading(false));
-  }, [slug]);
-
-  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
-
-  const fakeReseller = notFound ? [] : [{ id: 0, name: "", email: "", phone: "", shopName: slug ?? "", shopSlug: slug ?? "", address: "", status: "approved" as any, password: "" }];
-  const fakeShopProducts = products.map(p => ({ id: p.product_id, productId: p.product_id, shopId: 0, name: p.product_name, imagePreview: p.image, description: "", cost: 0, minPrice: 0, stock: p.stock, sellingPrice: p.price }));
-
-  return <ShopPage resellers={fakeReseller} shopProducts={fakeShopProducts} />;
-};
-
-// ════════════════════════════════════════════════════════════
-//  CHECKOUT PAGE (connected)
-// ════════════════════════════════════════════════════════════
-const CheckoutPageConnected = () => {
-  const { slug }       = useParams<{ slug: string }>();
-  const [searchParams] = useSearchParams();
-  const nav            = useNavigate();
-  const productId      = Number(searchParams.get("productId"));
-  const [products, setProducts] = useState<ShopProductAPI[]>([]);
-  const [shopId,   setShopId]   = useState<number>(0);
-  const [loading,  setLoading]  = useState(true);
-
-  useEffect(() => {
-    if (!slug) return;
     Promise.all([
       fetchShopProducts(slug),
-      fetch(`http://localhost:8080/shop/info/${slug}`, { credentials: "include" }).then(r => r.ok ? r.json() : null),
+      fetch(`http://localhost:8080/shop/info/${slug}`, { credentials: "include" })
+        .then(r => r.ok ? r.json() : null).catch(() => null),
     ])
-      .then(([prods, info]) => { setProducts(prods); if (info?.id) setShopId(info.id); })
-      .catch(() => {})
+      .then(([prods, info]) => {
+        setProducts(prods);
+        if (info?.id)   setShopId(info.id);
+        if (info?.name) setShopName(info.name);
+      })
+      .catch(() => setNotFound(true))
       .finally(() => setLoading(false));
   }, [slug]);
 
-  if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
+  if (loading) return <div style={{ color: "#6b7280", padding: 40, textAlign: "center" }}>⏳ กำลังโหลด...</div>;
 
-  const fakeReseller = [{ id: 0, name: "", email: "", phone: "", shopName: slug ?? "", shopSlug: slug ?? "", address: "", status: "approved" as any, password: "" }];
-  const fakeShopProducts = products.map(p => ({ id: p.product_id, productId: p.product_id, shopId: 0, name: p.product_name, imagePreview: p.image, description: "", cost: 0, minPrice: 0, stock: p.stock, sellingPrice: p.price }));
+  const fakeReseller = notFound ? [] : [{
+    id: 0, name: shopName || (slug ?? ""), email: "", phone: "",
+    shopName: shopName || (slug ?? ""), shopSlug: slug ?? "",
+    address: "", status: "approved" as any, password: "",
+  }];
 
-  const handlePlaceOrder = async (order: any) => {
-    try {
-      const orderNumber = await createOrder({
-        shop_id: shopId, customer_name: order.customer,
-        customer_phone: order.phone, shipping_address: order.address,
-        items: order.items.map((i: any) => ({ product_id: i.productId ?? productId, quantity: i.qty })),
-      });
-      nav(`/shop/${slug}/payment/${orderNumber}`);
-    } catch (err: any) { alert("เกิดข้อผิดพลาด: " + err.message); }
+  const fakeShopProducts = products.map(p => ({
+    id: p.product_id, productId: p.product_id, shopId: 0,
+    name: p.product_name, imagePreview: p.image,
+    description: "", cost: 0, minPrice: 0,
+    stock: p.stock, sellingPrice: p.price,
+  }));
+
+  const handlePlaceOrder = async (cartItems: any[], form: any) => {
+    const orderNumber = await createOrder({
+      shop_id:          shopId,
+      customer_name:    form.name,
+      customer_phone:   form.phone,
+      shipping_address: form.address,
+      items: cartItems.map((c: any) => ({
+        product_id: c.product.productId,
+        quantity:   c.qty,
+      })),
+    });
+    nav(`/shop/${slug}/payment/${orderNumber}`);
   };
 
-  return <CheckoutPage resellers={fakeReseller} shopProducts={fakeShopProducts} onPlaceOrder={handlePlaceOrder as any} />;
+  return (
+    <ShopPage
+      resellers={fakeReseller}
+      shopProducts={fakeShopProducts}
+      shopId={shopId}
+      slug={slug ?? ""}
+      onPlaceOrder={handlePlaceOrder}
+    />
+  );
 };
 
 // ════════════════════════════════════════════════════════════
@@ -1164,7 +1167,7 @@ export default function App() {
         <Route path="/reseller/wallet"      element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><WalletPageConnected           session={session!} /></ResellerLayout></RequireReseller>} />
 
         <Route path="/shop/:slug"                  element={<ShopPageConnected />} />
-        <Route path="/shop/:slug/checkout"         element={<CheckoutPageConnected />} />
+        <Route path="/shop/:slug/checkout"         element={<Navigate to={`/shop/${window.location.pathname.split("/")[2]}`} replace />} />
         <Route path="/shop/:slug/payment/:orderId" element={<PaymentPageConnected />} />
         <Route path="/track-order"                 element={<TrackOrderPageConnected />} />
 
