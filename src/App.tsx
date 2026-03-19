@@ -893,7 +893,7 @@ const ShopPageConnected = () => {
     localStorage.setItem("rms_last_shop", slug);
     Promise.all([
       fetchShopProducts(slug),
-      fetch(`http://localhost:8080/shop/info/${slug}`, { credentials: "include" })
+      fetch(`/api/shop/info/${slug}`, { credentials: "include" })
         .then(r => r.ok ? r.json() : null).catch(() => null),
     ])
       .then(([prods, info]) => {

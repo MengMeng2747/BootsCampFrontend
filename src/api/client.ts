@@ -1,7 +1,7 @@
 // ─── api/client.ts ────────────────────────────────────────────────────────────
 // Centralized fetch wrapper สำหรับเชื่อม Spring Boot Backend
 
-export const BASE_URL = "http://localhost:8080";
+export const BASE_URL = "/api";
 
 interface FetchOptions extends RequestInit {
   body?: any;
