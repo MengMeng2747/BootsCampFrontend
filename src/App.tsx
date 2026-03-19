@@ -1,5 +1,4 @@
 // ─── App.tsx ──────────────────────────────────────────────────────────────────
-// เชื่อม Frontend กับ Spring Boot Backend แล้ว
 import { useState, useEffect, KeyboardEvent, createContext, useContext, ReactNode, useCallback } from "react";
 import { Routes, Route, Navigate, useNavigate, useLocation, useParams, useSearchParams } from "react-router-dom";
 
@@ -29,12 +28,11 @@ import { TrackOrderPage } from "./pages/customer/TrackOrderPage";
 import { Alert } from "./components/Alert";
 import { T, F }  from "./styles/tokens";
 
-// ── API imports ────────────────────────────────────────────────────────────────
 import { adminLogin, adminLogout, resellerLogin, resellerRegister, fetchMe } from "./api/auth";
 import {
   fetchAdminDashboard, fetchAllProducts, createProduct, updateProduct, deleteProduct,
   fetchAllResellers, approveReseller, rejectReseller,
-  fetchAllOrders, shipOrder,
+  fetchAllOrders, shipOrder, completeOrder,
   type AdminDashboard as AdminDashboardData, type ProductAPI, type ResellerAPI, type OrderAPI,
 } from "./api/admin";
 import {
@@ -53,7 +51,7 @@ import type { AlertType } from "./types";
 //  AUTH CONTEXT
 // ════════════════════════════════════════════════════════════
 interface SessionUser {
-  id?:      number;   // reseller มี id, admin ไม่มี
+  id?:      number;
   email:    string;
   role:     "admin" | "reseller";
   name?:    string;
@@ -72,9 +70,6 @@ const useAuth = () => useContext(AuthContext)!;
 // ════════════════════════════════════════════════════════════
 //  PROTECTED ROUTES
 // ════════════════════════════════════════════════════════════
-
-// BR-03: เข้า /admin/* โดยไม่ได้ login → redirect /admin/login
-// BR-04: login เป็น reseller แต่เข้า /admin/* → Forbidden
 const RequireAdmin = ({ children }: { children: ReactNode }) => {
   const { session } = useAuth();
   if (!session) return <Navigate to="/admin/login" replace />;
@@ -82,14 +77,13 @@ const RequireAdmin = ({ children }: { children: ReactNode }) => {
   return <>{children}</>;
 };
 
-// Reseller ไม่ login → redirect /login
 const RequireReseller = ({ children }: { children: ReactNode }) => {
   const { session } = useAuth();
   return session?.role === "reseller" ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
 // ════════════════════════════════════════════════════════════
-//  FORBIDDEN PAGE (BR-04)
+//  FORBIDDEN PAGE
 // ════════════════════════════════════════════════════════════
 const ForbiddenPage = () => {
   const navigate = useNavigate();
@@ -126,7 +120,6 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
   };
   const currentPage = pageMap[location.pathname] ?? "dashboard";
 
-  // นับ reseller pending จาก backend
   useEffect(() => {
     fetchAllResellers()
       .then(rs => setPendingCount(rs.filter(r => r.status === "pending").length))
@@ -200,14 +193,8 @@ const AdminDashboardConnected = () => {
 
   useEffect(() => {
     setLoading(true);
-    Promise.all([
-      fetchAdminDashboard(),
-      fetchAllOrders(),
-    ])
-      .then(([dash, ords]) => {
-        setDashboard(dash);
-        setOrders(ords);
-      })
+    Promise.all([fetchAdminDashboard(), fetchAllOrders()])
+      .then(([dash, ords]) => { setDashboard(dash); setOrders(ords); })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false));
   }, []);
@@ -215,8 +202,6 @@ const AdminDashboardConnected = () => {
   if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
   if (error)   return <div style={{ color: T.red,   padding: 40, textAlign: "center", ...F }}>❌ {error}</div>;
 
-  // ใช้ค่าจาก /admin/dashboard โดยตรง (Backend คำนวณถูกต้องแล้ว)
-  // แปลง orders สำหรับตาราง "ออเดอร์ล่าสุด" เท่านั้น
   const mappedOrders = orders.map(o => ({
     id: o.orderNumber, resellerId: 0, resellerName: "", shopName: "",
     customer: o.customerName, phone: o.customerPhone, address: o.shippingAddress,
@@ -227,18 +212,8 @@ const AdminDashboardConnected = () => {
     cost: 0, date: o.createdAt, status: o.status as any,
   }));
 
-  // สร้าง fake products/resellers เพื่อส่ง props (DashboardPage คำนวณเอง)
-  // แต่ inject ค่า stat จาก backend แทน
-  const statOrders = [
-    // สร้าง orders จำลองให้ครบ stat ที่ backend ส่งมา
-    ...mappedOrders,
-    // ถ้า dashboard มีค่า inject dummy orders เพื่อให้ StatCard แสดงถูก
-  ];
-
-  // Override: ส่ง orders ที่มี totalSale/totalProfit จาก backend ตรงๆ
   return (
     <div>
-      {/* Stat cards จาก backend โดยตรง */}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 14, marginBottom: 28 }}>
         {[
           { label: "ยอดขายรวม",          value: `฿${Number(dashboard?.totalSales   ?? 0).toLocaleString()}`,  sub: "shipped+completed", accent: "#3fb950", icon: "📈" },
@@ -258,7 +233,6 @@ const AdminDashboardConnected = () => {
         ))}
       </div>
 
-      {/* ตารางออเดอร์ล่าสุด */}
       <h3 style={{ color: "#e6edf3", fontSize: 15, fontWeight: 600, marginBottom: 14 }}>ออเดอร์ล่าสุด</h3>
       <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 10, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
@@ -296,7 +270,7 @@ const AdminDashboardConnected = () => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN PRODUCTS PAGE (connected)
+//  ADMIN PRODUCTS PAGE (connected) — ✅ แก้ handleSetProducts
 // ════════════════════════════════════════════════════════════
 const AdminProductsConnected = () => {
   const navigate  = useNavigate();
@@ -331,30 +305,21 @@ const AdminProductsConnected = () => {
     cost: 0, date: o.createdAt, status: o.status as any,
   }));
 
-  // intercept setProducts → ดักจับการลบ (จำนวนลดลง) แล้วเรียก API
+  // ✅ แก้: เรียก deleteProduct API จริงๆ แล้วค่อย reload — ไม่อัปเดต UI ก่อน API เสร็จ
   const handleSetProducts = (updater: any) => {
     const prev = mappedProducts;
     const next = typeof updater === "function" ? updater(prev) : updater;
 
     if (next.length < prev.length) {
-      // หา product ที่หายไป → ลบ
-      const deleted = prev.find(p => !next.find((n: any) => n.id === p.id));
+      const deleted = prev.find((p: any) => !next.find((n: any) => n.id === p.id));
       if (deleted) {
         deleteProduct(deleted.id)
-          .then(load)
+          .then(() => load())
           .catch(e => alert("ลบไม่ได้: " + e.message));
       }
     } else {
-      // add/edit → reload
       load();
     }
-
-    // อัปเดต UI ทันที
-    setProductsState(next.map((n: any) => ({
-      id: n.id, name: n.name, imageUrl: n.imagePreview,
-      description: n.description, costPrice: n.cost,
-      minPrice: n.minPrice, stock: n.stock,
-    })));
   };
 
   return (
@@ -393,14 +358,10 @@ const AdminResellersConnected = () => {
     status: r.status as any, password: "",
   }));
 
-  // intercept setResellers → ดักจับ updater function แล้วเรียก API จริง
   const handleSetResellers = (updater: any) => {
-    // ResellersPage เรียก: setResellers(rs => rs.map(r => r.id === id ? {...r, status: "approved"} : r))
-    // เราต้องหา id และ status ที่เปลี่ยน แล้วเรียก API
     const prev = mapped;
     const next = typeof updater === "function" ? updater(prev) : updater;
 
-    // หา reseller ที่ status เปลี่ยน
     next.forEach((n: any) => {
       const old = prev.find(p => p.id === n.id);
       if (!old || old.status === n.status) return;
@@ -411,7 +372,6 @@ const AdminResellersConnected = () => {
       }
     });
 
-    // อัปเดต UI ทันทีก่อน reload
     setResellersState(next.map((n: any) => ({
       id: n.id, name: n.name, email: n.email, phone: n.phone,
       role: "reseller", status: n.status, address: n.address,
@@ -456,7 +416,6 @@ const AdminOrdersConnected = () => {
     _backendId: o.id,
   }));
 
-  // intercept setOrders → ดักจับ status ที่เปลี่ยนแล้วเรียก ship API
   const handleSetOrders = (updater: any) => {
     const prev = mapped;
     const next = typeof updater === "function" ? updater(prev) : updater;
@@ -464,16 +423,20 @@ const AdminOrdersConnected = () => {
     next.forEach((n: any) => {
       const old = prev.find(p => p.id === n.id);
       if (!old || old.status === n.status) return;
-      // status เปลี่ยนเป็น shipped → เรียก API
+
+      const backendId = orders.find(o => o.orderNumber === n.id)?.id;
+      if (!backendId) return;
+
+      // pending → shipped (BR-10)
       if (n.status === "shipped") {
-        const backendId = orders.find(o => o.orderNumber === n.id)?.id;
-        if (backendId) {
-          shipOrder(backendId).then(load).catch(e => alert(e.message));
-        }
+        shipOrder(backendId).then(load).catch(e => alert(e.message));
+      }
+      // shipped → completed
+      if (n.status === "completed") {
+        completeOrder(backendId).then(load).catch(e => alert(e.message));
       }
     });
 
-    // อัปเดต UI ทันที
     setOrdersState(next.map((n: any) => ({
       id: orders.find(o => o.orderNumber === n.id)?.id ?? 0,
       orderNumber: n.id,
@@ -497,7 +460,7 @@ const AdminOrdersConnected = () => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN LOGIN PAGE — URL: /admin/login (BR-01, BR-02)
+//  ADMIN LOGIN PAGE
 // ════════════════════════════════════════════════════════════
 const AdminLoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => {
   const navigate = useNavigate();
@@ -512,12 +475,10 @@ const AdminLoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }
     if (!email || !pass) { setError("กรุณากรอกอีเมลและรหัสผ่าน"); return; }
     setLoading(true);
     try {
-      // POST /admin/login → BR-01
       await adminLogin({ email, password: pass });
       setSession({ email, role: "admin" });
       navigate("/admin/dashboard");
     } catch (err: any) {
-      // BR-02: email/password ผิด หรือ role ไม่ใช่ admin
       setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
     } finally {
       setLoading(false);
@@ -574,7 +535,7 @@ const AdminLoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }
 };
 
 // ════════════════════════════════════════════════════════════
-//  RESELLER LOGIN PAGE — URL: /login (BR-15,16,17,18)
+//  RESELLER LOGIN PAGE
 // ════════════════════════════════════════════════════════════
 const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => {
   const navigate = useNavigate();
@@ -590,33 +551,21 @@ const LoginPage = ({ setSession }: { setSession: (u: SessionUser) => void }) => 
     if (!email || !pass) { setError("กรุณากรอกอีเมลและรหัสผ่าน"); return; }
     setLoading(true);
     try {
-      // POST /api/login
       const result = await resellerLogin({ email, password: pass });
-
       if (result.includes("รออนุมัติ")) {
-        // BR-16
         setStatusMsg({ type: "warning", msg: "บัญชีรออนุมัติ — กรุณารอการติดต่อจาก Admin (BR-16)" });
       } else if (result.includes("ไม่ได้รับการอนุมัติ")) {
-        // BR-17
         setStatusMsg({ type: "error", msg: "บัญชีนี้ไม่ได้รับการอนุมัติ — กรุณาติดต่อ Admin (BR-17)" });
       } else {
-        // BR-15: approved → เรียก /api/me เพื่อดึงข้อมูลจริง
         try {
           const me = await fetchMe();
-          setSession({
-            id:       me.id,
-            email:    me.email,
-            role:     "reseller",
-            name:     me.name,
-            shopSlug: me.shopSlug,
-          });
+          setSession({ id: me.id, email: me.email, role: "reseller", name: me.name, shopSlug: me.shopSlug });
         } catch {
           setSession({ email, role: "reseller" });
         }
         navigate("/reseller/dashboard");
       }
     } catch (err: any) {
-      // BR-18: email/password ผิด
       setError(err.message || "อีเมลหรือรหัสผ่านไม่ถูกต้อง");
     } finally {
       setLoading(false);
@@ -699,7 +648,7 @@ const RegisterPageConnected = () => {
       });
       navigate("/register/success");
     } catch (err: any) {
-      throw err; // ให้ RegisterPage จัดการ error เอง
+      throw err;
     }
   };
 
@@ -707,23 +656,20 @@ const RegisterPageConnected = () => {
     <RegisterPage
       onRegister={handleRegister as any}
       onGoLogin={() => navigate("/login")}
-      existingResellers={[]} // validation จาก backend แทน
+      existingResellers={[]}
     />
   );
 };
 
 // ════════════════════════════════════════════════════════════
-//  RESELLER PAGES (connected)
+//  RESELLER HOOK
 // ════════════════════════════════════════════════════════════
-
-// Hook สำหรับดึงข้อมูล reseller จาก session หรือ /api/me
 const useResellerInfo = (session: SessionUser) => {
   const [info,    setInfo]    = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const { setSession } = useAuth();
 
   useEffect(() => {
-    // ถ้ามี id แล้วใช้ได้เลย
     if (session.id) {
       setInfo({
         id: session.id, name: session.name ?? "", email: session.email,
@@ -733,10 +679,8 @@ const useResellerInfo = (session: SessionUser) => {
       setLoading(false);
       return;
     }
-    // ถ้าไม่มี id → fetch /api/me
     fetchMe()
       .then(me => {
-        // อัปเดต session ด้วย
         setSession({ id: me.id, email: me.email, role: "reseller", name: me.name, shopSlug: me.shopSlug });
         setInfo({
           id: me.id, name: me.name, email: me.email,
@@ -751,6 +695,9 @@ const useResellerInfo = (session: SessionUser) => {
   return { info, loading };
 };
 
+// ════════════════════════════════════════════════════════════
+//  RESELLER PAGES (connected)
+// ════════════════════════════════════════════════════════════
 const ResellerDashboardConnected = ({ session }: { session: SessionUser }) => {
   const { info, loading: infoLoading } = useResellerInfo(session);
   const [shopProducts, setShopProducts] = useState<ResellerProductAPI[]>([]);
@@ -760,11 +707,7 @@ const ResellerDashboardConnected = ({ session }: { session: SessionUser }) => {
 
   useEffect(() => {
     if (!info?.id) return;
-    Promise.all([
-      fetchMyProducts(info.id),
-      fetchResellerOrders(info.id),
-      fetchWallet(info.id),
-    ])
+    Promise.all([fetchMyProducts(info.id), fetchResellerOrders(info.id), fetchWallet(info.id)])
       .then(([prods, ords, wal]) => { setShopProducts(prods); setOrders(ords); setWallet(wal); })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -784,7 +727,6 @@ const ResellerDashboardConnected = ({ session }: { session: SessionUser }) => {
     profit: Number(l.amount), at: l.createdAt,
   })) ?? [];
 
-  // หา profit แต่ละ order จาก wallet logs
   const profitByOrderId = new Map<string, number>();
   walletEntries.forEach(w => profitByOrderId.set(w.orderId, w.profit));
 
@@ -834,7 +776,7 @@ const CatalogPageConnected = ({ session }: { session: SessionUser }) => {
   if (!info) return <div style={{ color: T.red, padding: 40, textAlign: "center", ...F }}>❌ ไม่พบข้อมูล กรุณา Login ใหม่</div>;
 
   const products = catalog.map(p => ({
-    id: p.id, name: p.name, imagePreview: null, description: "",
+    id: p.id, name: p.name, imagePreview: p.imageUrl ?? null, description: "",
     cost: p.cost_price, minPrice: p.min_price, stock: p.stock,
   }));
 
@@ -888,7 +830,7 @@ const MyProductsConnected = ({ session }: { session: SessionUser }) => {
     const catItem = catalog.find(c => c.id === p.id);
     return {
       id: p.id, productId: p.id, shopId: info.id,
-      name: p.name, imagePreview: null, description: "",
+      name: p.name, imagePreview: catItem?.imageUrl ?? null, description: "",
       cost: catItem?.cost_price ?? 0, minPrice: catItem?.min_price ?? 0,
       stock: p.stock, sellingPrice: p.selling_price,
     };
@@ -920,10 +862,7 @@ const ResellerOrdersConnected = ({ session }: { session: SessionUser }) => {
 
   useEffect(() => {
     if (!info?.id) return;
-    Promise.all([
-      fetchResellerOrders(info.id),
-      fetchWallet(info.id),
-    ])
+    Promise.all([fetchResellerOrders(info.id), fetchWallet(info.id)])
       .then(([ords, wal]) => { setOrders(ords); setWallet(wal); })
       .catch(() => {})
       .finally(() => setLoading(false));
@@ -932,7 +871,6 @@ const ResellerOrdersConnected = ({ session }: { session: SessionUser }) => {
   if (infoLoading || loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
   if (!info) return <div style={{ color: T.red, padding: 40, textAlign: "center", ...F }}>❌ ไม่พบข้อมูล กรุณา Login ใหม่</div>;
 
-  // หา profit แต่ละ order จาก wallet logs
   const profitByOrderId = new Map<string, number>();
   (wallet?.logs ?? []).forEach(l => profitByOrderId.set(String(l.orderId), Number(l.amount)));
 
@@ -1124,7 +1062,7 @@ const TrackOrderPageConnected = () => {
 };
 
 // ════════════════════════════════════════════════════════════
-//  ADMIN PRODUCT FORM — /admin/products/add & /admin/products/edit/:id
+//  ADMIN PRODUCT FORM
 // ════════════════════════════════════════════════════════════
 const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
   const navigate  = useNavigate();
@@ -1189,7 +1127,6 @@ const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
     }
   };
 
-  // ใช้ ProductFormModal เปิดอยู่เสมอ (open=true) ในหน้าเต็ม
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 24 }}>
@@ -1209,7 +1146,6 @@ const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
 
       {error && <div style={{ color: T.red, marginBottom: 16, ...F }}>❌ {error}</div>}
 
-      {/* เรนเดอร์ ProductFormModal แบบ inline (ไม่ใช่ popup) */}
       <div style={{ maxWidth: 560 }}>
         <ProductFormModalInline
           product={mappedProduct}
@@ -1222,13 +1158,12 @@ const AdminProductFormConnected = ({ mode }: { mode: "add" | "edit" }) => {
   );
 };
 
-// ── Inline form (ไม่ใช่ modal — render ในหน้าเต็ม) ──────────
 const ProductFormModalInline = ({
   product, orders, onSave, saving,
 }: {
   product: any; orders: any[]; onSave: (d: any) => void; saving: boolean;
 }) => {
-  const [form,   setForm]   = useState({
+  const [form, setForm] = useState({
     name:         product?.name         ?? "",
     imagePreview: product?.imagePreview ?? null as string | null,
     description:  product?.description  ?? "",
@@ -1336,93 +1271,6 @@ const ProductFormModalInline = ({
 };
 
 // ════════════════════════════════════════════════════════════
-//  APP ROOT
-// ════════════════════════════════════════════════════════════
-
-const SESSION_KEY = "rms_session";
-
-export default function App() {
-  // โหลด session จาก localStorage ตอนเริ่มต้น
-  const [session, setSessionState] = useState<SessionUser | null>(() => {
-    try {
-      const saved = localStorage.getItem(SESSION_KEY);
-      return saved ? JSON.parse(saved) : null;
-    } catch { return null; }
-  });
-  const navigate = useNavigate();
-
-  // setSession — บันทึกลง localStorage ด้วยทุกครั้ง
-  const setSession = (u: SessionUser | null) => {
-    setSessionState(u);
-    if (u) {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(u));
-    } else {
-      localStorage.removeItem(SESSION_KEY);
-    }
-  };
-
-  const logout = async () => {
-    try { await adminLogout(); } catch {}
-    const wasAdmin = session?.role === "admin";
-    setSession(null);
-    navigate(wasAdmin ? "/admin/login" : "/login");
-  };
-
-  const resellerInfo = session?.role === "reseller" ? {
-    id: session.id ?? 0, name: session.name ?? "", email: session.email,
-    phone: "", shopName: "", shopSlug: session.shopSlug ?? "",
-    address: "", status: "approved" as any, password: "",
-  } : null;
-
-  return (
-    <AuthContext.Provider value={{ session, setSession, logout }}>
-      <Routes>
-
-        {/* ── Default — redirect ตาม session ── */}
-        <Route path="/" element={
-          session?.role === "admin"    ? <Navigate to="/admin/dashboard"    replace /> :
-          session?.role === "reseller" ? <Navigate to="/reseller/dashboard" replace /> :
-                                         <Navigate to="/login"              replace />
-        } />
-        {/* ── ถ้า login อยู่แล้วเข้า /login หรือ /admin/login → redirect ไป dashboard ── */}
-        <Route path="/login"       element={session?.role === "reseller" ? <Navigate to="/reseller/dashboard" replace /> : <LoginPage      setSession={setSession} />} />
-        <Route path="/admin/login" element={session?.role === "admin"    ? <Navigate to="/admin/dashboard"    replace /> : <AdminLoginPage setSession={setSession} />} />
-
-        {/* ── Register ── */}
-        <Route path="/register"         element={<RegisterPageConnected />} />
-        <Route path="/register/success" element={<RegisterSuccessPage onGoLogin={() => navigate("/login")} />} />
-
-        {/* ── Admin (BR-03: ไม่ login → /admin/login, BR-04: reseller → /admin/forbidden) ── */}
-        <Route path="/admin/forbidden"          element={<ForbiddenPage />} />
-        <Route path="/admin/dashboard"          element={<RequireAdmin><AdminLayout><AdminDashboardConnected /></AdminLayout></RequireAdmin>} />
-        <Route path="/admin/products"           element={<RequireAdmin><AdminLayout><AdminProductsConnected  /></AdminLayout></RequireAdmin>} />
-        <Route path="/admin/products/add"       element={<RequireAdmin><AdminLayout><AdminProductFormConnected mode="add"  /></AdminLayout></RequireAdmin>} />
-        <Route path="/admin/products/edit/:id"  element={<RequireAdmin><AdminLayout><AdminProductFormConnected mode="edit" /></AdminLayout></RequireAdmin>} />
-        <Route path="/admin/resellers"          element={<RequireAdmin><AdminLayout><AdminResellersConnected /></AdminLayout></RequireAdmin>} />
-        <Route path="/admin/orders"             element={<RequireAdmin><AdminLayout><AdminOrdersConnected    /></AdminLayout></RequireAdmin>} />
-
-        {/* ── Reseller ── */}
-        <Route path="/reseller/dashboard"   element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><ResellerDashboardConnected session={session!} /></ResellerLayout></RequireReseller>} />
-        <Route path="/reseller/catalog"     element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><CatalogPageConnected        session={session!} /></ResellerLayout></RequireReseller>} />
-        <Route path="/reseller/my-products" element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><MyProductsConnected          session={session!} /></ResellerLayout></RequireReseller>} />
-        <Route path="/reseller/orders"      element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><ResellerOrdersConnected      session={session!} /></ResellerLayout></RequireReseller>} />
-        <Route path="/reseller/wallet"      element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><WalletPageConnected           session={session!} /></ResellerLayout></RequireReseller>} />
-
-        {/* ── Customer (ไม่ต้อง login) ── */}
-        <Route path="/shop/:slug"                  element={<ShopPageConnected />} />
-        <Route path="/shop/:slug/checkout"         element={<CheckoutPageConnected />} />
-        <Route path="/shop/:slug/payment/:orderId" element={<PaymentPageConnected />} />
-        <Route path="/track-order"                 element={<TrackOrderPageConnected />} />
-
-        {/* ── 404 ── */}
-        <Route path="*" element={<Navigate to="/login" replace />} />
-
-      </Routes>
-    </AuthContext.Provider>
-  );
-}
-
-// ════════════════════════════════════════════════════════════
 //  PAYMENT PAGE (connected)
 // ════════════════════════════════════════════════════════════
 const PaymentPageConnected = () => {
@@ -1433,7 +1281,6 @@ const PaymentPageConnected = () => {
 
   useEffect(() => {
     if (!orderId) return;
-    // ดึงข้อมูล order จริงจาก backend
     trackOrder(orderId)
       .then(setOrderData)
       .catch(() => {})
@@ -1442,7 +1289,6 @@ const PaymentPageConnected = () => {
 
   if (loading) return <div style={{ color: T.muted, padding: 40, textAlign: "center", ...F }}>⏳ กำลังโหลด...</div>;
 
-  // แปลงข้อมูลจาก backend ให้ตรงกับ PaymentPage props
   const order = orderId ? [{
     id:            orderId,
     resellerId:    0,
@@ -1469,9 +1315,83 @@ const PaymentPageConnected = () => {
   }] : [];
 
   const handlePaymentSuccess = async (oid: string) => {
-    // BR-28: ชำระเงินสำเร็จ → redirect ไปหน้า track
     nav(`/track-order?orderId=${oid}`);
   };
 
   return <PaymentPage orders={order} onPaymentSuccess={handlePaymentSuccess} />;
 };
+
+// ════════════════════════════════════════════════════════════
+//  APP ROOT
+// ════════════════════════════════════════════════════════════
+const SESSION_KEY = "rms_session";
+
+export default function App() {
+  const [session, setSessionState] = useState<SessionUser | null>(() => {
+    try {
+      const saved = localStorage.getItem(SESSION_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch { return null; }
+  });
+  const navigate = useNavigate();
+
+  const setSession = (u: SessionUser | null) => {
+    setSessionState(u);
+    if (u) {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(u));
+    } else {
+      localStorage.removeItem(SESSION_KEY);
+    }
+  };
+
+  const logout = async () => {
+    try { await adminLogout(); } catch {}
+    const wasAdmin = session?.role === "admin";
+    setSession(null);
+    navigate(wasAdmin ? "/admin/login" : "/login");
+  };
+
+  const resellerInfo = session?.role === "reseller" ? {
+    id: session.id ?? 0, name: session.name ?? "", email: session.email,
+    phone: "", shopName: "", shopSlug: session.shopSlug ?? "",
+    address: "", status: "approved" as any, password: "",
+  } : null;
+
+  return (
+    <AuthContext.Provider value={{ session, setSession, logout }}>
+      <Routes>
+        <Route path="/" element={
+          session?.role === "admin"    ? <Navigate to="/admin/dashboard"    replace /> :
+          session?.role === "reseller" ? <Navigate to="/reseller/dashboard" replace /> :
+                                         <Navigate to="/login"              replace />
+        } />
+        <Route path="/login"       element={session?.role === "reseller" ? <Navigate to="/reseller/dashboard" replace /> : <LoginPage      setSession={setSession} />} />
+        <Route path="/admin/login" element={session?.role === "admin"    ? <Navigate to="/admin/dashboard"    replace /> : <AdminLoginPage setSession={setSession} />} />
+
+        <Route path="/register"         element={<RegisterPageConnected />} />
+        <Route path="/register/success" element={<RegisterSuccessPage onGoLogin={() => navigate("/login")} />} />
+
+        <Route path="/admin/forbidden"          element={<ForbiddenPage />} />
+        <Route path="/admin/dashboard"          element={<RequireAdmin><AdminLayout><AdminDashboardConnected /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/products"           element={<RequireAdmin><AdminLayout><AdminProductsConnected  /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/products/add"       element={<RequireAdmin><AdminLayout><AdminProductFormConnected mode="add"  /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/products/edit/:id"  element={<RequireAdmin><AdminLayout><AdminProductFormConnected mode="edit" /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/resellers"          element={<RequireAdmin><AdminLayout><AdminResellersConnected /></AdminLayout></RequireAdmin>} />
+        <Route path="/admin/orders"             element={<RequireAdmin><AdminLayout><AdminOrdersConnected    /></AdminLayout></RequireAdmin>} />
+
+        <Route path="/reseller/dashboard"   element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><ResellerDashboardConnected session={session!} /></ResellerLayout></RequireReseller>} />
+        <Route path="/reseller/catalog"     element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><CatalogPageConnected        session={session!} /></ResellerLayout></RequireReseller>} />
+        <Route path="/reseller/my-products" element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><MyProductsConnected          session={session!} /></ResellerLayout></RequireReseller>} />
+        <Route path="/reseller/orders"      element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><ResellerOrdersConnected      session={session!} /></ResellerLayout></RequireReseller>} />
+        <Route path="/reseller/wallet"      element={<RequireReseller><ResellerLayout resellerInfo={resellerInfo}><WalletPageConnected           session={session!} /></ResellerLayout></RequireReseller>} />
+
+        <Route path="/shop/:slug"                  element={<ShopPageConnected />} />
+        <Route path="/shop/:slug/checkout"         element={<CheckoutPageConnected />} />
+        <Route path="/shop/:slug/payment/:orderId" element={<PaymentPageConnected />} />
+        <Route path="/track-order"                 element={<TrackOrderPageConnected />} />
+
+        <Route path="*" element={<Navigate to="/login" replace />} />
+      </Routes>
+    </AuthContext.Provider>
+  );
+}

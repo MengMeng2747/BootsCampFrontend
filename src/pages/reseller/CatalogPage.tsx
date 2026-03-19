@@ -63,7 +63,7 @@ export const CatalogPage: FC<CatalogPageProps> = ({ user, products, shopProducts
             <div key={p.id} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden", opacity: outOfStock ? .6 : 1 }}>
               <div style={{ height: 130, background: T.surface2, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 48, position: "relative" }}>
                 {p.imagePreview
-                  ? <img src={p.imagePreview} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                  ? <img src={p.imagePreview} alt={p.name} style={{ width: "100%", height: "100%", objectFit: "contain", padding: "16px" }} />
                   : "📦"
                 }
                 {outOfStock && (

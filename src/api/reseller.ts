@@ -6,6 +6,7 @@ import { api } from "./client";
 export interface CatalogProductAPI {
   id:         number;
   name:       string;
+  imageUrl:   string | null;  // ✅ เพิ่ม imageUrl
   cost_price: number;
   min_price:  number;
   stock:      number;

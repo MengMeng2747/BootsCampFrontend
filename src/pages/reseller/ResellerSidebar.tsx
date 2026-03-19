@@ -1,84 +1,114 @@
-// ─── components/reseller/ResellerSidebar.tsx ──────────────────────────────────
-import { FC } from "react";
-import { useNavigate } from "react-router-dom";
-import { T, F } from "../../styles/tokens";
-import type { ResellerPageId, ResellerUser } from "../../types";
+// ─── pages/reseller/MyProductsPage.tsx ────────────────────────────────────────
+import { useState } from "react";
+import type { FC } from "react";
+import { PageHeader, EmptyState } from "../../components/Layout";
+import { Table, Tr, Td }          from "../../components/Table";
+import { Btn }                    from "../../components/Btn";
+import { Modal }                  from "../../components/Modal";
+import { Alert }                  from "../../components/Alert";
+import { FieldWrap, Inp }         from "../../components/Form";
+import { useToast }               from "../../hooks/useToast";
+import { T, F }                   from "../../styles/tokens";
+import type { ShopProduct }       from "../../types";
 
-interface NavItem { id: ResellerPageId; label: string; icon: string; }
-const navItems: NavItem[] = [
-  { id: "dashboard",   label: "Dashboard",     icon: "⊞" },
-  { id: "catalog",     label: "เลือกสินค้า",   icon: "🏪" },
-  { id: "my-products", label: "สินค้าในร้าน",  icon: "📦" },
-  { id: "orders",      label: "ออเดอร์",        icon: "🛒" },
-  { id: "wallet",      label: "Wallet",         icon: "💰" },
-];
-
-interface ResellerSidebarProps {
-  page: ResellerPageId;
-  setPage: (p: ResellerPageId) => void;
-  onLogout: () => void;
-  collapsed: boolean;
-  setCollapsed: React.Dispatch<React.SetStateAction<boolean>>;
-  user: ResellerUser;
+interface MyProductsPageProps {
+  shopProducts:  ShopProduct[];
+  onRemove:      (id: number) => void;
+  onUpdatePrice: (sp: ShopProduct, price: number) => void;
 }
 
-export const ResellerSidebar: FC<ResellerSidebarProps> = ({ page, setPage, onLogout, collapsed, setCollapsed, user }) => {
-  const navigate = useNavigate();
+export const MyProductsPage: FC<MyProductsPageProps> = ({ shopProducts, onRemove, onUpdatePrice }) => {
+  const [editTarget,   setEditTarget]   = useState<ShopProduct | null>(null);
+  const [newPrice,     setNewPrice]     = useState("");
+  const [priceError,   setPriceError]   = useState("");
+  const [removeTarget, setRemoveTarget] = useState<ShopProduct | null>(null);
+  const [toast, showToast]              = useToast();
+
+  const handleUpdatePrice = (): void => {
+    const p = Number(newPrice);
+    if (!newPrice || isNaN(p) || p < editTarget!.minPrice) {
+      setPriceError(`ราคาต้อง ≥ ฿${editTarget!.minPrice.toLocaleString()}`);
+      return;
+    }
+    onUpdatePrice(editTarget!, p);
+    showToast("success", "อัปเดตราคาแล้ว");
+    setEditTarget(null);
+  };
+
   return (
-  <aside style={{ width: collapsed ? 60 : 220, minHeight: "100vh", background: T.surface, borderRight: `1px solid ${T.border}`, display: "flex", flexDirection: "column", transition: "width .2s", flexShrink: 0 }}>
-    <div style={{ padding: collapsed ? "16px 14px" : "16px 20px", borderBottom: `1px solid ${T.border2}`, display: "flex", alignItems: "center", gap: 10 }}>
-      <div style={{ width: 32, height: 32, borderRadius: "50%", background: `linear-gradient(135deg,#58a6ff,#bc8cff)`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, fontWeight: 700, color: "#fff", flexShrink: 0 }}>
-        {user.name.charAt(0)}
-      </div>
-      {!collapsed && (
-        <div style={{ overflow: "hidden" }}>
-          <div style={{ color: T.text, fontWeight: 700, fontSize: 13, ...F, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{user.shopName}</div>
-          <div style={{ color: T.muted, fontSize: 10, ...F }}>/shop/{user.shopSlug}</div>
-        </div>
-      )}
-    </div>
+    <div>
+      <PageHeader title="สินค้าในร้านของฉัน" subtitle="URL: /reseller/my-products" />
+      {toast}
 
-    <button onClick={() => setCollapsed(c => !c)} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", padding: "8px 0", textAlign: "center", fontSize: 14 }}>
-      {collapsed ? "›" : "‹"}
-    </button>
+      {shopProducts.length === 0
+        ? <EmptyState icon="🏪" message="ยังไม่มีสินค้าในร้าน — ไปเลือกสินค้าจาก Catalog" />
+        : (
+          <Table headers={["รูป","ชื่อสินค้า","ราคาทุน","ขั้นต่ำ","ราคาขาย","กำไร/ชิ้น","สต็อก","จัดการ"]}>
+            {shopProducts.map(sp => (
+              <Tr key={sp.id}>
+                <Td>
+                  <div style={{ width: 42, height: 42, borderRadius: 7, background: T.surface2, border: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 20, overflow: "hidden" }}>
+                    {sp.imagePreview
+                      ? <img src={sp.imagePreview} alt={sp.name} style={{ width: "100%", height: "100%", objectFit: "contain", padding: "4px" }} />
+                      : "📦"}
+                  </div>
+                </Td>
+                <Td style={{ fontWeight: 600 }}>{sp.name}</Td>
+                <Td style={{ color: T.yellow, fontWeight: 600 }}>฿{sp.cost.toLocaleString()}</Td>
+                <Td style={{ color: T.red,    fontWeight: 600 }}>฿{sp.minPrice.toLocaleString()}</Td>
+                <Td style={{ color: T.accent, fontWeight: 700 }}>฿{sp.sellingPrice.toLocaleString()}</Td>
+                <Td style={{ color: T.green,  fontWeight: 700 }}>฿{(sp.sellingPrice - sp.cost).toLocaleString()}</Td>
+                <Td>
+                  <span style={{ color: sp.stock > 0 ? T.green : T.red, fontWeight: 600 }}>
+                    {sp.stock > 0 ? sp.stock : "หมด"}
+                  </span>
+                </Td>
+                <Td>
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Btn variant="info"   size="sm" onClick={() => { setEditTarget(sp); setNewPrice(String(sp.sellingPrice)); setPriceError(""); }}>✏️ ราคา</Btn>
+                    <Btn variant="danger" size="sm" onClick={() => setRemoveTarget(sp)}>✕ เอาออก</Btn>
+                  </div>
+                </Td>
+              </Tr>
+            ))}
+          </Table>
+        )
+      }
 
-    <nav style={{ flex: 1, padding: 8 }}>
-      {navItems.map(n => {
-        const active = page === n.id;
-        return (
-          <button key={n.id} onClick={() => setPage(n.id)} title={collapsed ? n.label : undefined}
-            style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: collapsed ? "10px 0" : "10px 12px", justifyContent: collapsed ? "center" : "flex-start", marginBottom: 2, borderRadius: 8, border: "none", cursor: "pointer", background: active ? "rgba(88,166,255,.15)" : "transparent", color: active ? T.accent : T.muted, ...F }}>
-            <span style={{ fontSize: 16, flexShrink: 0 }}>{n.icon}</span>
-            {!collapsed && <span style={{ fontSize: 13, fontWeight: active ? 700 : 400 }}>{n.label}</span>}
-          </button>
-        );
-      })}
-
-      {/* ── ปุ่มเข้าร้านของตัวเอง ── */}
-      <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${T.border2}` }}>
-        <button
-          onClick={() => navigate(`/shop/${user.shopSlug}`)}
-          title={collapsed ? "ดูหน้าร้าน" : undefined}
-          style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: collapsed ? "10px 0" : "10px 12px", justifyContent: collapsed ? "center" : "flex-start", borderRadius: 8, border: `1px solid rgba(88,166,255,.25)`, cursor: "pointer", background: "rgba(88,166,255,.06)", color: T.accent, ...F }}
-        >
-          <span style={{ fontSize: 16, flexShrink: 0 }}>🌐</span>
-          {!collapsed && (
-            <div style={{ overflow: "hidden" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, lineHeight: 1.2 }}>ดูหน้าร้าน</div>
-              <div style={{ fontSize: 10, color: T.muted, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>/shop/{user.shopSlug}</div>
+      {/* Edit price modal */}
+      <Modal open={!!editTarget} onClose={() => setEditTarget(null)} title={`แก้ไขราคา — ${editTarget?.name}`} width={380}>
+        {editTarget && (
+          <div>
+            <Alert type="info" message={`ราคาขั้นต่ำ: ฿${editTarget.minPrice.toLocaleString()} | ราคาทุน: ฿${editTarget.cost.toLocaleString()}`} />
+            <FieldWrap label="ราคาขายใหม่ (บาท)" required error={priceError}>
+              <Inp type="number" value={newPrice} onChange={e => { setNewPrice(e.target.value); setPriceError(""); }} error={priceError} autoFocus />
+              {Number(newPrice) >= editTarget.minPrice && (
+                <p style={{ color: T.green, fontSize: 12, margin: "4px 0 0", ...F }}>
+                  กำไร: ฿{(Number(newPrice) - editTarget.cost).toLocaleString()} / ชิ้น
+                </p>
+              )}
+            </FieldWrap>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <Btn variant="ghost"   onClick={() => setEditTarget(null)}>ยกเลิก</Btn>
+              <Btn variant="primary" onClick={handleUpdatePrice}>💾 บันทึก</Btn>
             </div>
-          )}
-        </button>
-      </div>
-    </nav>
+          </div>
+        )}
+      </Modal>
 
-    <div style={{ padding: "12px 8px", borderTop: `1px solid ${T.border2}` }}>
-      <button onClick={onLogout} title={collapsed ? "ออกจากระบบ" : undefined}
-        style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", padding: collapsed ? "10px 0" : "10px 12px", justifyContent: collapsed ? "center" : "flex-start", borderRadius: 8, border: "none", cursor: "pointer", background: "transparent", color: T.muted, ...F }}>
-        <span style={{ fontSize: 16 }}>⏻</span>
-        {!collapsed && <span style={{ fontSize: 13 }}>ออกจากระบบ</span>}
-      </button>
+      {/* Remove confirm modal */}
+      <Modal open={!!removeTarget} onClose={() => setRemoveTarget(null)} title="ยืนยันเอาสินค้าออก" width={380}>
+        <p style={{ color: T.muted, ...F, marginTop: 0 }}>
+          เอา <strong style={{ color: T.text }}>"{removeTarget?.name}"</strong> ออกจากร้านของคุณ?
+          <br /><span style={{ fontSize: 12, color: T.dim }}>สินค้าจะยังอยู่ใน Catalog สามารถเพิ่มกลับได้</span>
+        </p>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Btn variant="ghost"  onClick={() => setRemoveTarget(null)}>ยกเลิก</Btn>
+          <Btn variant="danger" onClick={() => { onRemove(removeTarget!.id); showToast("success", `เอา "${removeTarget!.name}" ออกแล้ว`); setRemoveTarget(null); }}>
+            ✕ เอาออก
+          </Btn>
+        </div>
+      </Modal>
     </div>
-  </aside>
   );
 };

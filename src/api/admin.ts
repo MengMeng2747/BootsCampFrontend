@@ -1,7 +1,7 @@
 // ─── api/admin.ts ─────────────────────────────────────────────────────────────
 import { api } from "./client";
 
-// ══ Types (ตรงกับ Backend Entity/DTO) ══════════════════════════════════════════
+// ══ Types ══════════════════════════════════════════════════════════════════════
 
 export interface AdminDashboard {
   totalOrders:      number;
@@ -93,3 +93,7 @@ export const fetchAllOrders = (): Promise<OrderAPI[]> =>
 
 export const shipOrder = (id: number): Promise<OrderAPI> =>
   api.put<OrderAPI>(`/admin/orders/${id}/ship`);
+
+// ✅ เพิ่มใหม่: shipped → completed
+export const completeOrder = (id: number): Promise<OrderAPI> =>
+  api.put<OrderAPI>(`/admin/orders/${id}/complete`);
