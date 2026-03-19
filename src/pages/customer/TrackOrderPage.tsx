@@ -26,6 +26,17 @@ export const TrackOrderPage: FC<TrackOrderPageProps> = ({ orders }) => {
   const [queried, setQueried] = useState(!!searchParams.get("orderId"));
   const navigate = useNavigate();
 
+  // หา slug ของร้านจาก query string ก่อน ถ้าไม่มีค่อยอ่านจาก localStorage
+  const shopSlug = searchParams.get("shop") || localStorage.getItem("rms_last_shop");
+
+  const handleBack = () => {
+    if (shopSlug) {
+      navigate(`/shop/${shopSlug}`);
+    } else {
+      navigate(-1);
+    }
+  };
+
   const order = queried ? orders.find(o => o.id === input.trim().toUpperCase()) : null;
   const found = queried && !!order;
   const notFound = queried && !order;
@@ -47,12 +58,11 @@ export const TrackOrderPage: FC<TrackOrderPageProps> = ({ orders }) => {
         <div style={{ maxWidth: 640, margin: "0 auto", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div>
             <h1 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: "0 0 4px" }}>ติดตามสถานะออเดอร์</h1>
-            <p style={{ color: T.muted, fontSize: 13, margin: 0 }}>URL: /track-order</p>
           </div>
           <button
-            onClick={() => navigate("/")}
+            onClick={handleBack}
             style={{ padding: "8px 16px", background: T.surface2, border: `1px solid ${T.border}`, borderRadius: 8, color: T.muted, fontWeight: 600, cursor: "pointer", fontSize: 13, ...F, whiteSpace: "nowrap" }}>
-            ← กลับหน้าหลัก
+            ← กลับหน้าร้าน
           </button>
         </div>
       </div>

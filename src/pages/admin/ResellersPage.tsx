@@ -48,7 +48,7 @@ export const ResellersPage: FC<ResellersPageProps> = ({ resellers, setResellers 
 
   return (
     <div>
-      <PageHeader title="จัดการตัวแทน" subtitle="URL: /admin/resellers — รออนุมัติแสดงก่อน" />
+      <PageHeader title="จัดการตัวแทน"/>
       {toast}
 
       {/* Tabs */}

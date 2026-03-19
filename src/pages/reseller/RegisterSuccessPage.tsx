@@ -15,10 +15,10 @@ export const RegisterSuccessPage: FC<RegisterSuccessPageProps> = ({ onGoLogin })
       <div style={{ fontSize: 60, marginBottom: 16 }}>⏳</div>
       <h2 style={{ color: T.text, fontSize: 22, fontWeight: 700, margin: "0 0 12px" }}>สมัครสำเร็จแล้ว!</h2>
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "16px 20px", marginBottom: 24 }}>
-        <p style={{ color: T.muted, margin: 0, fontSize: 14, lineHeight: 1.8, ...F }}>
+        <p style={{ color: T.muted, margin: 0, fontSize: 18, lineHeight: 1.8, ...F }}>
           บัญชีของคุณอยู่ในสถานะ <StatusBadge status="pending" /><br />
           กรุณารอ Admin ตรวจสอบและอนุมัติ<br />
-          <span style={{ color: T.dim, fontSize: 12 }}>(BR-12: สมัครสำเร็จ → สถานะ รออนุมัติ)</span>
+          {/* <span style={{ color: T.dim, fontSize: 12 }}>(BR-12: สมัครสำเร็จ → สถานะ รออนุมัติ)</span> */}
         </p>
       </div>
       <Btn variant="primary" size="lg" onClick={onGoLogin}>ไปหน้า Login</Btn>

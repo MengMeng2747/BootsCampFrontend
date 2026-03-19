@@ -42,7 +42,6 @@ export const ProductsPage: FC<ProductsPageProps> = ({ products, setProducts, ord
     <div>
       <PageHeader
         title="จัดการสินค้า"
-        subtitle="URL: /admin/products"
         action={<Btn variant="primary" icon="＋" onClick={() => navigate("/admin/products/add")}>เพิ่มสินค้า</Btn>}
       />
       {toast}

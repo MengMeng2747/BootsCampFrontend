@@ -1,33 +1,27 @@
 // ─── components/admin/AdminTopbar.tsx ─────────────────────────────────────────
 import type { FC } from "react";
 import { T, F } from "../../styles/tokens";
-import type { AdminPageId } from "../../types";
-
-const urlMap: Record<AdminPageId, string> = {
-  dashboard: "/admin/dashboard",
-  products:  "/admin/products",
-  resellers: "/admin/resellers",
-  orders:    "/admin/orders",
-};
 
 interface AdminTopbarProps {
-  page: AdminPageId;
+  page:     string; // ยังคงรับ prop ไว้ไม่ให้ error แต่ไม่แสดง
   onToggle: () => void;
 }
 
-export const AdminTopbar: FC<AdminTopbarProps> = ({ page, onToggle }) => (
-  <header style={{ height: 52, background: T.surface, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", padding: "0 20px", gap: 14, flexShrink: 0 }}>
-    <button onClick={onToggle} style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 18, padding: 4 }}>☰</button>
-    <div style={{ color: T.dim, fontSize: 12, ...F, flex: 1 }}>
-      admin <span style={{ color: T.border, margin: "0 5px" }}>/</span>
-      <span style={{ color: T.muted }}>{urlMap[page].replace("/admin/", "")}</span>
-    </div>
-    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+export const AdminTopbar: FC<AdminTopbarProps> = ({ onToggle }) => (
+  <header style={{ height: 52, background: T.surface, borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", padding: "0 16px", gap: 12, flexShrink: 0 }}>
+    <button onClick={onToggle}
+      style={{ background: "none", border: "none", color: T.muted, cursor: "pointer", fontSize: 20, padding: "4px 6px", borderRadius: 6, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>
+      ☰
+    </button>
+    <div style={{ flex: 1 }} />
+    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
       <div style={{ width: 30, height: 30, borderRadius: "50%", background: "rgba(88,166,255,.2)", border: `1px solid ${T.accent}`, display: "flex", alignItems: "center", justifyContent: "center", color: T.accent, fontSize: 12, fontWeight: 700 }}>A</div>
-      <div>
-        <div style={{ color: T.text, fontSize: 12, fontWeight: 600, ...F }}>Admin</div>
-        <div style={{ color: T.muted, fontSize: 10, ...F }}>admin@rms.com</div>
-      </div>
+      {window.innerWidth >= 640 && (
+        <div>
+          <div style={{ color: T.text, fontSize: 12, fontWeight: 600, ...F }}>Admin</div>
+          <div style={{ color: T.muted, fontSize: 10, ...F }}>admin@rms.com</div>
+        </div>
+      )}
     </div>
   </header>
 );

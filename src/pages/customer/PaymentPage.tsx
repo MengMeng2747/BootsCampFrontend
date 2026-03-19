@@ -69,7 +69,7 @@ export const PaymentPage: FC<PaymentPageProps> = ({ orders, onPaymentSuccess }) 
                 <div style={{ textAlign: "center", marginBottom: 24 }}>
                   <div style={{ fontSize: 36, marginBottom: 8 }}>💳</div>
                   <h1 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: "0 0 4px" }}>จำลองการชำระเงิน</h1>
-                  <p style={{ color: T.muted, fontSize: 12, margin: 0 }}>URL: /shop/{slug}/payment/{orderId}</p>
+                  {/* <p style={{ color: T.muted, fontSize: 12, margin: 0 }}>{orderId}</p> */}
                 </div>
 
                 {/* ป้ายแจ้ง */}
@@ -113,7 +113,7 @@ export const PaymentPage: FC<PaymentPageProps> = ({ orders, onPaymentSuccess }) 
                 </button>
 
                 <p style={{ textAlign: "center", color: T.dim, fontSize: 11, marginTop: 12 }}>
-                  กดปุ่มแล้วถือว่าชำระเงินสำเร็จทันที (BR-28)
+                  กดปุ่มแล้วถือว่าชำระเงินสำเร็จทันที
                 </p>
               </>
             )}

@@ -69,7 +69,7 @@ export const OrdersPage: FC<OrdersPageProps> = ({ orders, setOrders }) => {
 
   return (
     <div>
-      <PageHeader title="จัดการออเดอร์" subtitle="URL: /admin/orders — BR-10 (Wallet) BR-11 (สูตรกำไร)" />
+      <PageHeader title="จัดการออเดอร์"/>
       {toast}
 
       {/* Status flow */}
@@ -80,7 +80,7 @@ export const OrdersPage: FC<OrdersPageProps> = ({ orders, setOrders }) => {
             <StatusBadge status={s} />{i < 2 && <span style={{ color: T.dim }}>→</span>}
           </span>
         ))}
-        <span style={{ color: T.dim, fontSize: 11, ...F, marginLeft: 8 }}>• จัดส่งแล้ว = บวกกำไร Wallet (BR-10)</span>
+        <span style={{ color: T.dim, fontSize: 11, ...F, marginLeft: 8 }}></span>
       </div>
 
       {/* Wallet log */}

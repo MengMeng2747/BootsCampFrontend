@@ -48,7 +48,7 @@ export const CatalogPage: FC<CatalogPageProps> = ({ user, products, shopProducts
 
   return (
     <div>
-      <PageHeader title="เลือกสินค้าเข้าร้าน" subtitle="URL: /reseller/catalog — สินค้ากลางทั้งหมด" />
+      <PageHeader title="เลือกสินค้าเข้าร้าน"/>
       {toast}
       <div style={{ marginBottom: 16 }}>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="🔍 ค้นหาสินค้า..."

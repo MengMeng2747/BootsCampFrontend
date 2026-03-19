@@ -37,7 +37,7 @@ export const MyProductsPage: FC<MyProductsPageProps> = ({ shopProducts, onRemove
 
   return (
     <div>
-      <PageHeader title="สินค้าในร้านของฉัน" subtitle="URL: /reseller/my-products" />
+      <PageHeader title="สินค้าในร้านของฉัน"/>
       {toast}
 
       {shopProducts.length === 0

@@ -35,7 +35,7 @@ export const OrdersPage: FC<OrdersPageProps> = ({ user, orders }) => {
 
   return (
     <div>
-      <PageHeader title="ออเดอร์ร้านของฉัน" subtitle="URL: /reseller/orders — เฉพาะออเดอร์จากร้านของคุณ" />
+      <PageHeader title="ออเดอร์ร้านของฉัน"/>
       <Alert type="info" message="คุณเห็นเฉพาะออเดอร์จากร้านของตัวเองเท่านั้น ไม่เห็นออเดอร์ร้านอื่น" />
 
       {/* Tabs */}

@@ -25,7 +25,7 @@ export const DashboardPage: FC<DashboardPageProps> = ({ user, shopProducts, orde
 
   return (
     <div>
-      <PageHeader title="Dashboard" subtitle={`URL: /reseller/dashboard — ยินดีต้อนรับ, ${user.name}`} />
+      <PageHeader title="Dashboard"/>
 
       {/* Shop link card */}
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "16px 20px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>

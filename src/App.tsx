@@ -25,7 +25,7 @@ import { PaymentPage }    from "./pages/customer/PaymentPage";
 import { TrackOrderPage } from "./pages/customer/TrackOrderPage";
 
 import { Alert } from "./components/Alert";
-import { T, F }  from "./styles/tokens";
+import { T, F, applyTheme }  from "./styles/tokens";
 
 import { adminLogin, adminLogout, resellerLogin, resellerRegister, fetchMe } from "./api/auth";
 import {
@@ -67,6 +67,14 @@ const AuthContext = createContext<AuthContextType | null>(null);
 const useAuth = () => useContext(AuthContext)!;
 
 // ════════════════════════════════════════════════════════════
+//  THEME CONTEXT
+// ════════════════════════════════════════════════════════════
+type Theme = "dark" | "light";
+interface ThemeContextType { theme: Theme; toggleTheme: () => void; }
+const ThemeContext = createContext<ThemeContextType>({ theme: "light", toggleTheme: () => {} });
+export const useTheme = () => useContext(ThemeContext);
+
+// ════════════════════════════════════════════════════════════
 //  PROTECTED ROUTES
 // ════════════════════════════════════════════════════════════
 const RequireAdmin = ({ children }: { children: ReactNode }) => {
@@ -106,9 +114,21 @@ const ForbiddenPage = () => {
 // ════════════════════════════════════════════════════════════
 const AdminLayout = ({ children }: { children: ReactNode }) => {
   const { logout } = useAuth();
+  const { toggleTheme, theme } = useTheme();
   const navigate   = useNavigate();
   const location   = useLocation();
-  const [pendingCount, setPendingCount] = useState(0);
+  const [pendingCount,  setPendingCount]  = useState(0);
+  const [sidebarOpen,   setSidebarOpen]   = useState(false);
+  const [isMobile,      setIsMobile]      = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  // ปิด sidebar เมื่อ navigate บน mobile
+  useEffect(() => { if (isMobile) setSidebarOpen(false); }, [location.pathname]);
 
   const pageMap: Record<string, any> = {
     "/admin/dashboard": "dashboard",
@@ -127,17 +147,37 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: T.bg }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <AdminSidebar
-        page={currentPage}
-        setPage={(p: string) => navigate(`/admin/${p}`)}
-        onLogout={logout}
-        collapsed={false}
-        setCollapsed={() => {}}
-        pendingCount={pendingCount}
-      />
+
+      {/* Backdrop บน mobile */}
+      {isMobile && sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 40 }} />
+      )}
+
+      {/* Sidebar — fixed drawer บน mobile, static บน desktop */}
+      <div style={{
+        position:  isMobile ? "fixed" : "relative",
+        left:      isMobile ? (sidebarOpen ? 0 : -220) : 0,
+        top:       0, bottom: 0,
+        zIndex:    isMobile ? 50 : "auto",
+        transition: "left .25s ease",
+        flexShrink: 0,
+      }}>
+        <AdminSidebar
+          page={currentPage}
+          setPage={(p: string) => navigate(`/admin/${p}`)}
+          onLogout={logout}
+          collapsed={false}
+          setCollapsed={() => {}}
+          pendingCount={pendingCount}
+          onToggleTheme={toggleTheme}
+          theme={theme}
+        />
+      </div>
+
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-        <AdminTopbar page={currentPage} onToggle={() => {}} />
-        <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>{children}</main>
+        <AdminTopbar page={currentPage} onToggle={() => setSidebarOpen(o => !o)} />
+        <main style={{ flex: 1, padding: isMobile ? "16px" : "24px 28px", overflowY: "auto" }}>{children}</main>
       </div>
     </div>
   );
@@ -148,8 +188,19 @@ const AdminLayout = ({ children }: { children: ReactNode }) => {
 // ════════════════════════════════════════════════════════════
 const ResellerLayout = ({ children, resellerInfo }: { children: ReactNode; resellerInfo: any }) => {
   const { logout } = useAuth();
+  const { toggleTheme, theme } = useTheme();
   const navigate   = useNavigate();
   const location   = useLocation();
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [isMobile,    setIsMobile]    = useState(() => window.innerWidth < 768);
+
+  useEffect(() => {
+    const onResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  useEffect(() => { if (isMobile) setSidebarOpen(false); }, [location.pathname]);
 
   const pageMap: Record<string, any> = {
     "/reseller/dashboard":   "dashboard",
@@ -163,17 +214,35 @@ const ResellerLayout = ({ children, resellerInfo }: { children: ReactNode; resel
   return (
     <div style={{ display: "flex", height: "100vh", overflow: "hidden", background: T.bg }}>
       <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@400;500;600;700&display=swap" rel="stylesheet" />
-      <ResellerSidebar
-        page={currentPage}
-        setPage={(p: string) => navigate(`/reseller/${p}`)}
-        onLogout={logout}
-        collapsed={false}
-        setCollapsed={() => {}}
-        user={resellerInfo}
-      />
+
+      {isMobile && sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 40 }} />
+      )}
+
+      <div style={{
+        position:  isMobile ? "fixed" : "relative",
+        left:      isMobile ? (sidebarOpen ? 0 : -220) : 0,
+        top: 0, bottom: 0,
+        zIndex:    isMobile ? 50 : "auto",
+        transition: "left .25s ease",
+        flexShrink: 0,
+      }}>
+        <ResellerSidebar
+          page={currentPage}
+          setPage={(p: string) => navigate(`/reseller/${p}`)}
+          onLogout={logout}
+          collapsed={false}
+          setCollapsed={() => {}}
+          user={resellerInfo}
+          onToggleTheme={toggleTheme}
+          theme={theme}
+        />
+      </div>
+
       <div style={{ flex: 1, display: "flex", flexDirection: "column", minWidth: 0, overflow: "hidden" }}>
-        <ResellerTopbar page={currentPage} onToggle={() => {}} user={resellerInfo} />
-        <main style={{ flex: 1, padding: "24px 28px", overflowY: "auto" }}>{children}</main>
+        <ResellerTopbar page={currentPage} onToggle={() => setSidebarOpen(o => !o)} user={resellerInfo} />
+        <main style={{ flex: 1, padding: isMobile ? "16px" : "24px 28px", overflowY: "auto" }}>{children}</main>
       </div>
     </div>
   );
@@ -221,24 +290,24 @@ const AdminDashboardConnected = () => {
           { label: "ตัวแทนอนุมัติแล้ว",  value: Number(dashboard?.totalResellers  ?? 0),                      sub: "Login ได้",          accent: "#58a6ff", icon: "👥" },
           { label: "ตัวแทนรออนุมัติ",    value: Number(dashboard?.pendingResellers ?? 0),                      sub: "รอตรวจสอบ",          accent: "#bc8cff", icon: "⚠️" },
         ].map(s => (
-          <div key={s.label} style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 10, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
+          <div key={s.label} style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
             <div style={{ position: "absolute", right: 14, top: 12, fontSize: 28, opacity: .15 }}>{s.icon}</div>
-            <div style={{ color: "#7d8590", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8 }}>{s.label}</div>
-            <div style={{ color: "#e6edf3", fontSize: 26, fontWeight: 700 }}>{s.value}</div>
-            <div style={{ color: "#7d8590", fontSize: 12, marginTop: 4 }}>{s.sub}</div>
+            <div style={{ color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".07em", marginBottom: 8, ...F }}>{s.label}</div>
+            <div style={{ color: T.text,  fontSize: 26, fontWeight: 700, ...F }}>{s.value}</div>
+            <div style={{ color: T.muted, fontSize: 12, marginTop: 4, ...F }}>{s.sub}</div>
             <div style={{ height: 2, background: `linear-gradient(90deg,${s.accent},transparent)`, borderRadius: 2, marginTop: 14 }} />
           </div>
         ))}
       </div>
 
-      <h3 style={{ color: "#e6edf3", fontSize: 15, fontWeight: 600, marginBottom: 14 }}>ออเดอร์ล่าสุด</h3>
-      <div style={{ background: "#161b22", border: "1px solid #30363d", borderRadius: 10, overflow: "hidden" }}>
+      <h3 style={{ color: T.text, fontSize: 15, fontWeight: 600, marginBottom: 14, ...F }}>ออเดอร์ล่าสุด</h3>
+      <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, overflow: "hidden" }}>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
-              <tr style={{ background: "#1c2128" }}>
+              <tr style={{ background: T.surface2 }}>
                 {["เลขออเดอร์","ชื่อร้าน","ลูกค้า","ยอดขาย","กำไร","สถานะ"].map(h => (
-                  <th key={h} style={{ padding: "11px 16px", textAlign: "left", color: "#7d8590", fontSize: 11, fontWeight: 700, textTransform: "uppercase" }}>{h}</th>
+                  <th key={h} style={{ padding: "11px 16px", textAlign: "left", color: T.muted, fontSize: 11, fontWeight: 700, textTransform: "uppercase", ...F }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -249,14 +318,14 @@ const AdminDashboardConnected = () => {
                 .map(o => {
                   const isDone = ["shipped","completed"].includes(o.status);
                   return (
-                    <tr key={o.id} style={{ borderTop: "1px solid #21262d" }}>
-                      <td style={{ padding: "13px 16px", color: "#58a6ff", fontWeight: 600, fontSize: 12 }}>{o.id}</td>
-                      <td style={{ padding: "13px 16px", color: "#e6edf3", fontSize: 13, fontWeight: 600 }}>{o.shopName || "—"}</td>
-                      <td style={{ padding: "13px 16px", color: "#e6edf3", fontSize: 13 }}>{o.customer}</td>
-                      <td style={{ padding: "13px 16px", color: "#3fb950", fontWeight: 700, fontSize: 13 }}>฿{Number(o.totalSale).toLocaleString()}</td>
-                      <td style={{ padding: "13px 16px", color: isDone ? "#f0883e" : "#484f58", fontWeight: isDone ? 700 : 400, fontSize: 13 }}>{isDone ? `฿${Number(o.totalProfit).toLocaleString()}` : "—"}</td>
+                    <tr key={o.id} style={{ borderTop: `1px solid ${T.border2}` }}>
+                      <td style={{ padding: "13px 16px", color: T.accent,  fontWeight: 600, fontSize: 12, ...F }}>{o.id}</td>
+                      <td style={{ padding: "13px 16px", color: T.text,    fontSize: 13, fontWeight: 600, ...F }}>{o.shopName || "—"}</td>
+                      <td style={{ padding: "13px 16px", color: T.text,    fontSize: 13, ...F }}>{o.customer}</td>
+                      <td style={{ padding: "13px 16px", color: T.green,   fontWeight: 700, fontSize: 13, ...F }}>฿{Number(o.totalSale).toLocaleString()}</td>
+                      <td style={{ padding: "13px 16px", color: isDone ? T.orange : T.dim, fontWeight: isDone ? 700 : 400, fontSize: 13, ...F }}>{isDone ? `฿${Number(o.totalProfit).toLocaleString()}` : "—"}</td>
                       <td style={{ padding: "13px 16px" }}>
-                        <span style={{ background: o.status==="pending" ? "rgba(210,153,34,.15)" : o.status==="shipped" ? "rgba(88,166,255,.12)" : "rgba(188,140,255,.12)", color: o.status==="pending" ? "#d29922" : o.status==="shipped" ? "#58a6ff" : "#bc8cff", border: `1px solid ${o.status==="pending" ? "rgba(210,153,34,.4)" : o.status==="shipped" ? "rgba(88,166,255,.35)" : "rgba(188,140,255,.35)"}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 600 }}>
+                        <span style={{ background: o.status==="pending" ? "rgba(210,153,34,.15)" : o.status==="shipped" ? "rgba(88,166,255,.12)" : "rgba(188,140,255,.12)", color: o.status==="pending" ? T.yellow : o.status==="shipped" ? T.accent : T.purple, border: `1px solid ${o.status==="pending" ? "rgba(210,153,34,.4)" : o.status==="shipped" ? "rgba(88,166,255,.35)" : "rgba(188,140,255,.35)"}`, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 600, ...F }}>
                           {o.status==="pending" ? "รออนุมัติ" : o.status==="shipped" ? "จัดส่งแล้ว" : "เสร็จสมบูรณ์"}
                         </span>
                       </td>
@@ -820,6 +889,8 @@ const ShopPageConnected = () => {
 
   useEffect(() => {
     if (!slug) return;
+    // บันทึก slug ของร้านที่กำลังดูอยู่ใน localStorage
+    localStorage.setItem("rms_last_shop", slug);
     Promise.all([
       fetchShopProducts(slug),
       fetch(`http://localhost:8080/shop/info/${slug}`, { credentials: "include" })
@@ -1108,13 +1179,48 @@ const PaymentPageConnected = () => {
 // ════════════════════════════════════════════════════════════
 //  APP ROOT
 // ════════════════════════════════════════════════════════════
-const SESSION_KEY = "rms_session";
+const SESSION_KEY       = "rms_session";
+const THEME_KEY_ADMIN   = "rms_theme_admin";
+const THEME_KEY_RESELLER= "rms_theme_reseller";
 
 export default function App() {
   const [session, setSessionState] = useState<SessionUser | null>(() => {
     try { const saved = localStorage.getItem(SESSION_KEY); return saved ? JSON.parse(saved) : null; }
     catch { return null; }
   });
+
+  // ── Theme แยกตาม role — default เป็น "light" เสมอ ──────
+  const [adminTheme,    setAdminTheme]    = useState<Theme>(() =>
+    (localStorage.getItem(THEME_KEY_ADMIN)    as Theme) ?? "light"
+  );
+  const [resellerTheme, setResellerTheme] = useState<Theme>(() =>
+    (localStorage.getItem(THEME_KEY_RESELLER) as Theme) ?? "light"
+  );
+
+  // role ปัจจุบัน → เลือก theme ที่จะ apply
+  const currentRole  = session?.role ?? null;
+  const activeTheme: Theme =
+    currentRole === "admin"    ? adminTheme    :
+    currentRole === "reseller" ? resellerTheme :
+    "light"; // หน้าลูกค้า/login/register → light เสมอ
+
+  useEffect(() => {
+    applyTheme(activeTheme);
+  }, [activeTheme]);
+
+  const toggleTheme = () => {
+    if (currentRole === "admin") {
+      const next: Theme = adminTheme === "dark" ? "light" : "dark";
+      setAdminTheme(next);
+      localStorage.setItem(THEME_KEY_ADMIN, next);
+    } else if (currentRole === "reseller") {
+      const next: Theme = resellerTheme === "dark" ? "light" : "dark";
+      setResellerTheme(next);
+      localStorage.setItem(THEME_KEY_RESELLER, next);
+    }
+  };
+  // ──────────────────────────────────────────────────────────
+
   const navigate = useNavigate();
 
   const setSession = (u: SessionUser | null) => {
@@ -1137,6 +1243,7 @@ export default function App() {
   } : null;
 
   return (
+    <ThemeContext.Provider value={{ theme: activeTheme, toggleTheme }}>
     <AuthContext.Provider value={{ session, setSession, logout }}>
       <Routes>
         <Route path="/" element={
@@ -1174,5 +1281,6 @@ export default function App() {
         <Route path="*" element={<Navigate to="/login" replace />} />
       </Routes>
     </AuthContext.Provider>
+    </ThemeContext.Provider>
   );
 }

@@ -69,7 +69,6 @@ export const RegisterPage: FC<RegisterPageProps> = ({ onRegister, onGoLogin, exi
             <div style={{ textAlign: "center", marginBottom: 24 }}>
               <div style={{ fontSize: 36, marginBottom: 8 }}>🏪</div>
               <h1 style={{ color: T.text, fontSize: 20, fontWeight: 700, margin: "0 0 4px", ...F }}>สมัครเป็นตัวแทนขาย</h1>
-              <p style={{ color: T.muted, fontSize: 13, margin: 0, ...F }}>URL: /register</p>
             </div>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>

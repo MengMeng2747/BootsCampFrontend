@@ -19,20 +19,22 @@ export const WalletPage: FC<WalletPageProps> = ({ walletEntries }) => {
 
   return (
     <div>
-      <PageHeader title="Wallet กำไรสะสม" subtitle="URL: /reseller/wallet — จำลองเท่านั้น ไม่สามารถถอนเงินได้จริง" />
+      <PageHeader title="Wallet กำไรสะสม"/>
 
       {/* Balance card */}
       <div style={{ background: `linear-gradient(135deg,rgba(63,185,80,.15),rgba(57,211,83,.05))`, border: "1px solid rgba(63,185,80,.3)", borderRadius: 14, padding: "28px 32px", marginBottom: 24, textAlign: "center", position: "relative", overflow: "hidden" }}>
         <div style={{ position: "absolute", right: -10, top: -10, fontSize: 100, opacity: .06 }}>💰</div>
         <div style={{ color: T.green, fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: ".1em", ...F, marginBottom: 8 }}>ยอดกำไรสะสม</div>
         <div style={{ color: T.green, fontSize: 48, fontWeight: 700, ...F }}>฿{balance.toLocaleString()}</div>
-        <div style={{ color: T.muted, fontSize: 13, marginTop: 8, ...F }}>ระบบจำลอง — ไม่สามารถถอนเงินได้จริง</div>
+        <div style={{ color: T.muted, fontSize: 13, marginTop: 8, ...F }}>ระบบจำลอง<br/> 
+          กำไร = (ราคาขาย − ราคาทุน) × จำนวน ต่อ จำนวนสินค้า
+        </div>
         <div style={{ display: "inline-block", marginTop: 12, background: "rgba(63,185,80,.12)", border: "1px solid rgba(63,185,80,.25)", borderRadius: 6, padding: "4px 12px", fontSize: 12, color: T.green, ...F }}>
           รวม {walletEntries.length} รายการ
         </div>
       </div>
 
-      {/* Business rules */}
+      {/* Business rules
       <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 10, padding: "14px 18px", marginBottom: 20 }}>
         <div style={{ color: T.muted, fontSize: 12, fontWeight: 700, marginBottom: 8, ...F }}>📋 Business Rules</div>
         <div style={{ display: "flex", flexDirection: "column" as const, gap: 6 }}>
@@ -43,7 +45,7 @@ export const WalletPage: FC<WalletPageProps> = ({ walletEntries }) => {
             <span style={{ color: T.yellow }}>BR-23:</span> กำไร = (ราคาขาย − ราคาทุน) × จำนวน ต่อ item
           </div>
         </div>
-      </div>
+      </div> */}
 
       {/* History */}
       <h3 style={{ color: T.text, fontSize: 15, fontWeight: 600, marginBottom: 14, ...F }}>ประวัติรายได้</h3>
